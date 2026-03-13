@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Quicksand } from "next/font/google";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -12,8 +12,14 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const quicksand = Quicksand({
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-title",
+  subsets: ["latin"],
+});
+
 export const metadata: Metadata = {
-  title: "FF14 PVP クリスタルコンフリクト",
+  title: "Stella Note",
   description: "PVP反省会の記録を管理",
 };
 
@@ -25,7 +31,7 @@ export default function RootLayout({
   return (
     <html lang="ja" suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${quicksand.variable} antialiased`}
         suppressHydrationWarning
       >
         {children}

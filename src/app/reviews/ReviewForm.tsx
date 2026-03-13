@@ -67,7 +67,17 @@ export default function ReviewForm({ initial }: Props) {
   const [videos, setVideos] = useState<VideoEntry[]>(() => parseVideoUrl(initial?.video_url))
 
   const addMatch = () => setMatchResults((m) => [...m, getDefaultMatch()])
-  const removeMatch = (index: number) => setMatchResults((m) => m.filter((_, i) => i !== index))
+  const removeMatch = (index: number) => {
+    setMatchResults((m) => m.filter((_, i) => i !== index))
+    setCollapsedAnalysisIndices((prev) => {
+      const next = new Set<number>()
+      prev.forEach((i) => {
+        if (i < index) next.add(i)
+        else if (i > index) next.add(i - 1)
+      })
+      return next
+    })
+  }
   const updateMatch = (index: number, field: keyof MatchResult, value: string | boolean | MemberJobPair[] | string[]) => {
     setMatchResults((m) => m.map((x, i) => (i === index ? { ...x, [field]: value } : x)))
   }
@@ -101,10 +111,15 @@ export default function ReviewForm({ initial }: Props) {
   const formRef = useRef<HTMLFormElement>(null)
   const saveAndGoBackRef = useRef(false)
   const memberDropdownRef = useRef<HTMLDivElement>(null)
+  const opponentListRef = useRef<HTMLDivElement>(null)
   const preserveMatchesRef = useRef<string | null>(getInitialMatchesRef(initial))
   const [contentFormatActive, setContentFormatActive] = useState({ bold: false, underline: false, strikeThrough: false })
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false)
   const [memberDropdownOpen, setMemberDropdownOpen] = useState<{ match: number; pair: number } | null>(null)
+  const [pastOpponents, setPastOpponents] = useState<string[]>([])
+  const [showOpponentList, setShowOpponentList] = useState(false)
+  const [editingVideoUrlIndex, setEditingVideoUrlIndex] = useState<number | null>(null)
+  const [collapsedAnalysisIndices, setCollapsedAnalysisIndices] = useState<Set<number>>(new Set())
 
   useEffect(() => {
     if (!contentRef.current) return
@@ -120,6 +135,16 @@ export default function ReviewForm({ initial }: Props) {
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [memberDropdownOpen])
+
+  useEffect(() => {
+    if (!showOpponentList) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (opponentListRef.current?.contains(e.target as Node)) return
+      setShowOpponentList(false)
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showOpponentList])
 
   const syncContentFromDiv = () => {
     if (contentRef.current) setForm((f) => ({ ...f, content: contentRef.current!.innerHTML }))
@@ -285,18 +310,65 @@ export default function ReviewForm({ initial }: Props) {
           />
         </div>
       </div>
-      <div>
+      <div ref={opponentListRef} className="relative">
         <label htmlFor="opponent" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
           対戦相手
         </label>
-        <input
-          id="opponent"
-          type="text"
-          value={form.opponent}
-          onChange={(e) => setForm((f) => ({ ...f, opponent: e.target.value }))}
-          className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
-          placeholder="例: 〇〇チーム"
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            id="opponent"
+            type="text"
+            value={form.opponent}
+            onChange={(e) => setForm((f) => ({ ...f, opponent: e.target.value }))}
+            className="min-w-0 flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+            placeholder="例: 〇〇チーム"
+          />
+          <button
+            type="button"
+            onClick={async () => {
+              if (showOpponentList) {
+                setShowOpponentList(false)
+                return
+              }
+              try {
+                const res = await fetch('/api/opponents')
+                if (res.ok) {
+                  const names = (await res.json()) as string[]
+                  setPastOpponents(names)
+                  setShowOpponentList(true)
+                }
+              } catch {
+                setPastOpponents([])
+                setShowOpponentList(true)
+              }
+            }}
+            className="shrink-0 rounded-lg border border-zinc-300 bg-zinc-100 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-200 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600"
+          >
+            対戦歴から選ぶ
+          </button>
+        </div>
+        {showOpponentList && (
+          <ul className="absolute left-0 right-0 top-full z-10 mt-1 max-h-48 overflow-auto rounded-lg border border-zinc-300 bg-white py-1 shadow-lg dark:border-zinc-600 dark:bg-zinc-800">
+            {pastOpponents.length === 0 ? (
+              <li className="px-3 py-2 text-sm text-zinc-500 dark:text-zinc-400">対戦歴がありません</li>
+            ) : (
+              pastOpponents.map((name) => (
+                <li key={name}>
+                  <button
+                    type="button"
+                    className="w-full px-3 py-2 text-left text-sm text-zinc-900 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-700"
+                    onClick={() => {
+                      setForm((f) => ({ ...f, opponent: name }))
+                      setShowOpponentList(false)
+                    }}
+                  >
+                    {name}
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
+        )}
       </div>
 
       <div>
@@ -305,20 +377,31 @@ export default function ReviewForm({ initial }: Props) {
             試合ごとの結果
           </span>
         </div>
-        <div className="space-y-4 rounded-lg border border-zinc-200 bg-zinc-50/50 p-3 dark:border-zinc-700 dark:bg-zinc-800/30">
-          {matchResults.map((match, matchIndex) => (
+        <div className="space-y-4 rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800">
+          {matchResults.map((match, matchIndex) => {
+            const isColoredMatch = match.result === '勝ち' || match.result === '負け'
+            const labelClass = isColoredMatch ? 'text-white' : 'text-zinc-500 dark:text-zinc-400'
+            const headingClass = isColoredMatch ? 'text-white' : 'text-zinc-600 dark:text-zinc-400'
+            const mutedClass = isColoredMatch ? 'text-white' : 'text-zinc-700 dark:text-zinc-300'
+            return (
             <div
               key={matchIndex}
-              className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-600 dark:bg-zinc-900"
+              className={`rounded-lg border p-4 ${
+                match.result === '勝ち'
+                  ? 'border-[#8a4526] bg-[#a0522d] dark:border-[#6d3820] dark:bg-[#a0522d]'
+                  : match.result === '負け'
+                    ? 'border-[#3a6d99] bg-[#4682b4] dark:border-[#3a6d99] dark:bg-[#4682b4]'
+                    : 'border-zinc-200 bg-white dark:border-zinc-600 dark:bg-zinc-900'
+              }`}
             >
               <div className="mb-3 flex items-center justify-between">
-                <span className="text-sm font-medium text-zinc-600 dark:text-zinc-400">試合 {matchIndex + 1}</span>
+                <span className={`text-sm font-medium ${headingClass}`}>試合 {matchIndex + 1}</span>
                 <div className="flex gap-2">
                   {matchIndex > 0 && (
                     <button
                       type="button"
                       onClick={() => copyPreviousMatchTo(matchIndex)}
-                      className="rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-700"
+                      className={`rounded border px-2 py-1 text-xs ${isColoredMatch ? 'border-white bg-zinc-600/60 text-white hover:bg-zinc-600/80 dark:border-white dark:bg-zinc-600/60 dark:hover:bg-zinc-600/80' : 'border-zinc-300 bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-600'}`}
                     >
                       前の試合を引き継ぐ
                     </button>
@@ -326,7 +409,7 @@ export default function ReviewForm({ initial }: Props) {
                   <button
                     type="button"
                     onClick={() => removeMatch(matchIndex)}
-                    className="text-sm text-zinc-500 hover:text-red-600 dark:hover:text-red-400"
+                    className={`text-sm ${isColoredMatch ? 'text-white hover:opacity-90' : 'text-zinc-500 hover:text-red-600 dark:hover:text-red-400'}`}
                     aria-label="この試合を削除"
                   >
                     削除
@@ -338,7 +421,7 @@ export default function ReviewForm({ initial }: Props) {
               <div className="mb-3 flex flex-col gap-4 sm:flex-row">
                 {/* この試合のメンバー・ジョブ（5人固定） */}
                 <div className="min-w-0 flex-1">
-                  <span className="mb-1.5 block text-xs font-medium text-zinc-500 dark:text-zinc-400">メンバー・ジョブ</span>
+                  <span className={`mb-1.5 block text-xs font-medium ${labelClass}`}>メンバー・ジョブ</span>
                   <div className="space-y-2 rounded border border-amber-200 bg-amber-50/50 p-2 dark:border-amber-800/30 dark:bg-zinc-800/80">
                     {(match.member_jobs.length > 0 ? match.member_jobs : Array.from({ length: DEFAULT_MEMBER_ROWS }, () => ({ member: '', job: '' }))).slice(0, DEFAULT_MEMBER_ROWS).map((pair, pairIndex) => {
                       const isCustomMember = pair.member && !MEMBERS_LIST.includes(pair.member as (typeof MEMBERS_LIST)[number])
@@ -441,7 +524,7 @@ export default function ReviewForm({ initial }: Props) {
 
                 {/* 相手チームのジョブ（5人分・別セクション） */}
                 <div className="min-w-0 shrink-0 sm:w-52">
-                  <label className="mb-1.5 block text-xs font-medium text-zinc-500 dark:text-zinc-400">相手チームのジョブ</label>
+                  <label className={`mb-1.5 block text-xs font-medium ${labelClass}`}>相手チームのジョブ</label>
                   <div className="space-y-2 rounded border border-violet-200 bg-violet-50/50 p-2 dark:border-violet-800/30 dark:bg-zinc-800/80">
                     {[0, 1, 2, 3, 4].map((slotIndex) => {
                       const job = match.opponent_jobs[slotIndex] ?? ''
@@ -468,7 +551,7 @@ export default function ReviewForm({ initial }: Props) {
 
               {/* マップ（1行目） */}
               <div className="mb-3">
-                <label className="mb-0.5 block text-xs font-medium text-zinc-500 dark:text-zinc-400">マップ</label>
+                <label className={`mb-0.5 block text-xs font-medium ${labelClass}`}>マップ</label>
                 <select
                   value={match.map}
                   onChange={(e) => updateMatch(matchIndex, 'map', e.target.value)}
@@ -484,7 +567,7 @@ export default function ReviewForm({ initial }: Props) {
               {/* 勝ち負け・OT突入時状況・残り 分秒（2行目） */}
               <div className="mb-3 flex flex-wrap items-end gap-3">
                 <div className="w-24 shrink-0">
-                  <label className="mb-0.5 block text-xs font-medium text-zinc-500 dark:text-zinc-400">勝ち負け</label>
+                  <label className={`mb-0.5 block text-xs font-medium ${labelClass}`}>勝ち負け</label>
                   <select
                     value={match.result}
                     onChange={(e) => updateMatch(matchIndex, 'result', e.target.value)}
@@ -497,7 +580,7 @@ export default function ReviewForm({ initial }: Props) {
                   </select>
                 </div>
                 <div className="w-28 shrink-0">
-                  <label className="mb-0.5 block text-xs font-medium text-zinc-500 dark:text-zinc-400">OT突入時状況</label>
+                  <label className={`mb-0.5 block text-xs font-medium ${labelClass}`}>OT突入時状況</label>
                   <select
                     value={match.ot_situation}
                     onChange={(e) => updateMatch(matchIndex, 'ot_situation', e.target.value)}
@@ -511,7 +594,7 @@ export default function ReviewForm({ initial }: Props) {
                 </div>
                 <div className="flex items-end gap-2">
                   <div>
-                    <label className="mb-0.5 block text-xs font-medium text-zinc-500 dark:text-zinc-400">残り 分</label>
+                    <label className={`mb-0.5 block text-xs font-medium ${labelClass}`}>残り 分</label>
                     <input
                       type="text"
                       inputMode="numeric"
@@ -522,7 +605,7 @@ export default function ReviewForm({ initial }: Props) {
                     />
                   </div>
                   <div>
-                    <label className="mb-0.5 block text-xs font-medium text-zinc-500 dark:text-zinc-400">秒</label>
+                    <label className={`mb-0.5 block text-xs font-medium ${labelClass}`}>秒</label>
                     <input
                       type="text"
                       inputMode="numeric"
@@ -539,7 +622,7 @@ export default function ReviewForm({ initial }: Props) {
                       onChange={(e) => updateMatch(matchIndex, 'is_ot', e.target.checked)}
                       className="rounded border-zinc-300 text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800"
                     />
-                    <span className="text-sm text-zinc-700 dark:text-zinc-300">OT</span>
+                    <span className={`text-sm ${mutedClass}`}>OT</span>
                   </label>
                 </div>
               </div>
@@ -547,44 +630,57 @@ export default function ReviewForm({ initial }: Props) {
               {/* クリスタル輸送 自・相手（3行目） */}
               <div className="flex flex-wrap items-end gap-3">
                 <div className="w-24 shrink-0">
-                  <label className="mb-0.5 block text-xs font-medium text-zinc-500 dark:text-zinc-400">クリスタル 自</label>
+                  <label className={`mb-0.5 block text-xs font-medium ${labelClass}`}>クリスタル 自</label>
                   <div className="flex items-center gap-1 rounded-lg border border-zinc-300 dark:border-zinc-600">
                     <input
                       type="text"
-                      inputMode="numeric"
+                      inputMode="decimal"
                       placeholder="50"
                       value={match.crystal_self.replace(/%/g, '')}
                       onChange={(e) => {
-                        const half = e.target.value.replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
-                        const num = half.replace(/[^0-9]/g, '')
+                        const half = e.target.value.replace(/[０-９．]/g, (c) =>
+                          c === '．' ? '.' : String.fromCharCode(c.charCodeAt(0) - 0xfee0)
+                        )
+                        const filtered = half.replace(/[^0-9.]/g, '')
+                        const parts = filtered.split('.')
+                        const num = parts.length > 1
+                          ? parts[0] + '.' + parts[1].slice(0, 1)
+                          : parts[0]
                         updateMatch(matchIndex, 'crystal_self', num ? `${num}%` : '')
                       }}
                       className="w-full rounded-l-lg border-0 px-2 py-2 text-sm text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100"
                     />
-                    <span className="shrink-0 pr-2 text-sm text-zinc-500 dark:text-zinc-400">%</span>
+                    <span className={`shrink-0 pr-2 text-sm ${labelClass}`}>%</span>
                   </div>
                 </div>
                 <div className="w-24 shrink-0">
-                  <label className="mb-0.5 block text-xs font-medium text-zinc-500 dark:text-zinc-400">クリスタル 相手</label>
+                  <label className={`mb-0.5 block text-xs font-medium ${labelClass}`}>クリスタル 相手</label>
                   <div className="flex items-center gap-1 rounded-lg border border-zinc-300 dark:border-zinc-600">
                     <input
                       type="text"
-                      inputMode="numeric"
+                      inputMode="decimal"
                       placeholder="50"
                       value={match.crystal_opponent.replace(/%/g, '')}
                       onChange={(e) => {
-                        const half = e.target.value.replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
-                        const num = half.replace(/[^0-9]/g, '')
+                        const half = e.target.value.replace(/[０-９．]/g, (c) =>
+                          c === '．' ? '.' : String.fromCharCode(c.charCodeAt(0) - 0xfee0)
+                        )
+                        const filtered = half.replace(/[^0-9.]/g, '')
+                        const parts = filtered.split('.')
+                        const num = parts.length > 1
+                          ? parts[0] + '.' + parts[1].slice(0, 1)
+                          : parts[0]
                         updateMatch(matchIndex, 'crystal_opponent', num ? `${num}%` : '')
                       }}
                       className="w-full rounded-l-lg border-0 px-2 py-2 text-sm text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100"
                     />
-                    <span className="shrink-0 pr-2 text-sm text-zinc-500 dark:text-zinc-400">%</span>
+                    <span className={`shrink-0 pr-2 text-sm ${labelClass}`}>%</span>
                   </div>
                 </div>
               </div>
             </div>
-          ))}
+            )
+          })}
         </div>
         <div className="mt-3 flex justify-start">
           <button
@@ -598,8 +694,61 @@ export default function ReviewForm({ initial }: Props) {
       </div>
 
       <div>
+        <div className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+          各試合分析
+        </div>
+        <div className="mb-4 space-y-2">
+          {matchResults.map((match, matchIndex) => {
+            const isCollapsed = collapsedAnalysisIndices.has(matchIndex)
+            const isAnalysisColored = match.result === '勝ち' || match.result === '負け'
+            const analysisBoxClass = match.result === '勝ち'
+              ? 'overflow-hidden rounded-lg border border-[#8a4526] bg-[#a0522d] dark:border-[#6d3820] dark:bg-[#a0522d]'
+              : match.result === '負け'
+                ? 'overflow-hidden rounded-lg border border-[#3a6d99] bg-[#4682b4] dark:border-[#3a6d99] dark:bg-[#4682b4]'
+                : 'overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-600 dark:bg-zinc-900'
+            const analysisHeaderClass = isAnalysisColored
+              ? 'flex w-full items-center justify-between px-3 py-2.5 text-left text-sm font-medium text-white hover:opacity-90'
+              : 'flex w-full items-center justify-between px-3 py-2.5 text-left text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800'
+            const analysisChevronClass = isAnalysisColored ? 'text-white/90' : 'text-zinc-400 dark:text-zinc-500'
+            const analysisBorderClass = isAnalysisColored ? 'border-white/40' : 'border-zinc-200 dark:border-zinc-700'
+            return (
+              <div key={matchIndex} className={analysisBoxClass}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCollapsedAnalysisIndices((prev) => {
+                      const next = new Set(prev)
+                      if (next.has(matchIndex)) next.delete(matchIndex)
+                      else next.add(matchIndex)
+                      return next
+                    })
+                  }}
+                  className={analysisHeaderClass}
+                >
+                  <span>試合 {matchIndex + 1}</span>
+                  <span className={analysisChevronClass} aria-hidden>
+                    {isCollapsed ? '▶' : '▼'}
+                  </span>
+                </button>
+                {!isCollapsed && (
+                  <div className={`border-t ${analysisBorderClass} px-3 py-2`}>
+                    <textarea
+                      value={match.analysis ?? ''}
+                      onChange={(e) => updateMatch(matchIndex, 'analysis', e.target.value)}
+                      placeholder="この試合の分析を入力"
+                      rows={4}
+                      className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+                    />
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+      <div>
         <label htmlFor="content" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-          反省内容
+          振り返り
         </label>
         <div className="flex flex-wrap gap-1 rounded-t-lg border border-b-0 border-zinc-300 bg-zinc-100 p-1 dark:border-zinc-600 dark:bg-zinc-800/50">
           <button
@@ -632,7 +781,7 @@ export default function ReviewForm({ initial }: Props) {
           contentEditable
           suppressContentEditableWarning
           role="textbox"
-          aria-label="反省内容"
+          aria-label="振り返り"
           data-placeholder="反省・気づきを記入"
           onInput={syncContentFromDiv}
           onSelect={updateContentFormatState}
@@ -654,15 +803,36 @@ export default function ReviewForm({ initial }: Props) {
             >
               <div className="min-w-0 flex-1 basis-0">
                 <label className="mb-0.5 block text-xs font-medium text-zinc-500 dark:text-zinc-400">URL</label>
-                <input
-                  type="url"
-                  value={video.url}
-                  onChange={(e) =>
-                    setVideos((v) => v.map((x, i) => (i === index ? { ...x, url: e.target.value } : x)))
-                  }
-                  className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
-                  placeholder="https://..."
-                />
+                {video.url.trim() && editingVideoUrlIndex !== index ? (
+                  <div className="flex items-center gap-2">
+                    <a
+                      href={video.url.trim()}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="min-w-0 flex-1 truncate text-sm text-blue-600 hover:underline dark:text-blue-400"
+                    >
+                      {video.url.trim()}
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => setEditingVideoUrlIndex(index)}
+                      className="shrink-0 text-xs text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-400"
+                    >
+                      変更
+                    </button>
+                  </div>
+                ) : (
+                  <input
+                    type="url"
+                    value={video.url}
+                    onChange={(e) =>
+                      setVideos((v) => v.map((x, i) => (i === index ? { ...x, url: e.target.value } : x)))
+                    }
+                    onBlur={() => setEditingVideoUrlIndex(null)}
+                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                    placeholder="https://..."
+                  />
+                )}
               </div>
               <div className="w-32 shrink-0">
                 <label className="mb-0.5 block text-xs font-medium text-zinc-500 dark:text-zinc-400">視点</label>

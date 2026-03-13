@@ -119,6 +119,8 @@ export type MatchResult = {
   member_jobs: MemberJobPair[]
   /** 相手チームのジョブ（5人分・ジョブのみ） */
   opponent_jobs: string[]
+  /** 各試合分析（試合ごとのテキスト） */
+  analysis?: string
 }
 
 /**
@@ -163,6 +165,7 @@ function getDefaultMatchInner(prevMemberJobs?: MemberJobPair[]): MatchResult {
       ? prevMemberJobs.map((p) => ({ ...p }))
       : Array.from({ length: DEFAULT_MEMBER_ROWS }, () => ({ member: '', job: '' })),
     opponent_jobs: ['', '', '', '', ''],
+    analysis: '',
   }
 }
 
@@ -208,6 +211,7 @@ function normalizeMatch(p: unknown): MatchResult {
     is_ot: typeof raw?.is_ot === 'boolean' ? raw.is_ot : true,
     member_jobs,
     opponent_jobs,
+    analysis: typeof raw?.analysis === 'string' ? raw.analysis : '',
   }
 }
 

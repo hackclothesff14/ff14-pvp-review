@@ -94,6 +94,91 @@ git push -u origin main
 
 ---
 
+## 「Authorize your device」と表示されたときのやり方
+
+`git push` をしたあと、ターミナルに **「Authorize your device」** や **「Enter one-time code:」** と出ることがあります。これは「このパソコンを GitHub に一度だけ認証する」ための手順です。
+
+### 手順（3ステップ）
+
+1. **ターミナルに表示されたコードを確認する**  
+   - `Enter one-time code:` のあとに **8文字の英数字**（例: `ABCD-1234`）が表示されているか、または「ブラウザで次の URL を開いてください」と URL が出ているか確認します。
+   - コードが表示されていない場合は、その上に書いてある **URL**（`https://github.com/login/device` など）をメモします。
+
+2. **ブラウザで GitHub のデバイス認証ページを開く**  
+   - ブラウザで次のアドレスを開きます：  
+     **https://github.com/login/device**
+   - すでに GitHub にログインしていない場合は、先に GitHub にログインしてから同じページを開き直します。
+
+3. **コードを入力して「Authorize」する**  
+   - ページの入力欄に、ターミナルに表示されていた **8文字のコード** をそのまま入力します。
+   - **Authorize**（または「認証」）ボタンをクリックします。
+   - 成功すると「Device activated」のようなメッセージが出ます。
+
+4. **ターミナルに戻る**  
+   - ブラウザでの操作が終わったら、ターミナルに戻ります。  
+   - 認証が通っていれば、そのあと `git push` が自動で続行されるか、もう一度 `git push` を実行すると成功します。
+
+### 補足
+
+- この「デバイス認証」は、**このパソコンから GitHub に安全にログインするため**の一度きりの手順です。
+- 次回から同じパソコンで push するときは、同じ手順を繰り返す場合と、そのまま push できる場合があります（Git の認証の保存設定によります）。
+
+### 8文字のコードがどこにも出ない場合 → パスワードで Personal Access Token を使う
+
+ターミナルにコードが表示されないときは、**ユーザー名とパスワード**を聞かれる方式になっていることがあります。その場合は次のようにします。
+
+1. **GitHub で Personal Access Token (PAT) を作る**
+   - ブラウザで [GitHub](https://github.com) にログイン
+   - 右上のアイコン → **Settings** → 左メニュー一番下 **Developer settings** → **Personal access tokens** → **Tokens (classic)**
+   - **Generate new token (classic)** をクリック
+   - **Note**: 例）`git push用`
+   - **Expiration**: 好きな期間（例：90 days）
+   - **Select scopes**: **repo** にチェックを入れる
+   - **Generate token** をクリック
+   - 表示された **トークン（ghp_ で始まる文字列）をコピー**して、メモ帳などに貼り付けておく（この画面を離れると二度と表示されません）
+
+2. **ターミナルで `git push` をもう一度実行する**
+   ```bash
+   git push -u origin main
+   ```
+
+3. **聞かれたら入力する**
+   - **Username for 'https://github.com':** → GitHub のユーザー名（例: `hackclothesff14`）を入力して Enter
+   - **Password for 'https://hackclothesff14@github.com':** → さきほどコピーした **PAT を貼り付けて** Enter（入力しても画面には表示されませんが、そのまま Enter で大丈夫です）
+
+4. 成功すると `Branch 'main' set up to track...` や `Writing objects: 100%` のような表示が出て push が完了します。
+
+---
+
+## どうしてもターミナルで push できないとき（URL に PAT を入れて一度だけ push）
+
+ユーザー名・パスワードの入力がうまくいかない場合は、**リモートの URL に PAT を一時的に含めて** push する方法があります。
+
+**注意**: PAT が URL に含まれるため、**push が成功したら必ず次の「4. 元に戻す」を実行してください。** また、ターミナルの履歴に URL が残るので、後から PAT を無効化（GitHub でトークンを削除）してもよいです。
+
+1. **GitHub で Personal Access Token (PAT) を用意する**  
+   （上記「8文字のコードがどこにも出ない場合」の 1. と同じ手順で作成し、`ghp_` で始まるトークンをコピー）
+
+2. **いまの push が止まっている場合は Ctrl+C で一度キャンセルする**
+
+3. **次のコマンドを 1 行で実行する**（`あなたのPAT` のところを、コピーした PAT に置き換える）
+   ```bash
+   git remote set-url origin https://hackclothesff14:あなたのPAT@github.com/hackclothesff14/ff14-pvp-review.git
+   git push -u origin main
+   ```
+   例：PAT が `ghp_abc123xyz` なら  
+   `git remote set-url origin https://hackclothesff14:ghp_abc123xyz@github.com/hackclothesff14/ff14-pvp-review.git`
+
+4. **push が成功したら、URL から PAT を外して元に戻す**
+   ```bash
+   git remote set-url origin https://github.com/hackclothesff14/ff14-pvp-review.git
+   ```
+   これで次回以降、リモート URL にパスワードは含まれません。
+
+5. **セキュリティのため**: GitHub の Settings → Developer settings → Personal access tokens で、今使ったトークンを **Delete** してから、次回用に新しいトークンを発行してもかまいません。
+
+---
+
 ## よくあるエラー
 
 | 状況 | 対処 |
