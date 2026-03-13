@@ -21,6 +21,9 @@ const quicksand = Quicksand({
 export const metadata: Metadata = {
   title: "Stella Note",
   description: "PVP反省会の記録を管理",
+  icons: {
+    icon: "/icon.png",
+  },
 };
 
 export default function RootLayout({
