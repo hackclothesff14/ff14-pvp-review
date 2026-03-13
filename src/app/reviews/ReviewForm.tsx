@@ -189,9 +189,16 @@ export default function ReviewForm({ initial }: Props) {
       initial?.id && matchResults.length === 0 && preserveMatchesRef.current
         ? preserveMatchesRef.current
         : serializeMatchResults(matchResults)
+    // 編集中に contentRef が未反映で空になる場合、既存の振り返りを空で上書きしない
+    const rawContent = contentHtml !== undefined ? contentHtml : form.content
+    const hasExistingContent = (initial?.content ?? '').trim() !== ''
+    const contentToSave =
+      initial?.id && (rawContent ?? '').trim() === '' && hasExistingContent
+        ? (initial.content ?? '')
+        : (rawContent ?? '')
     const payload = {
       ...form,
-      content: contentHtml !== undefined ? contentHtml : form.content,
+      content: contentToSave,
       members: '',
       jobs: '',
       matches,
