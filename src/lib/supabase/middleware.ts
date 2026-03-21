@@ -6,7 +6,7 @@ import { NextResponse, type NextRequest } from 'next/server'
  * 制限を再度有効にする場合は、下記のコメントアウトを外して return response の前に配置する。
  */
 export async function updateSession(request: NextRequest) {
-  let response = NextResponse.next({ request })
+  const response = NextResponse.next({ request })
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

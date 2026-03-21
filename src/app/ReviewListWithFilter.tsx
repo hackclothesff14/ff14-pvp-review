@@ -5,9 +5,9 @@ import Link from 'next/link'
 import { parseMatchResults } from '@/lib/constants'
 import type { Review } from '@/lib/types'
 
-type Props = { reviews: Review[] }
+type Props = { reviews: Review[]; hideToolbar?: boolean }
 
-export default function ReviewListWithFilter({ reviews }: Props) {
+export default function ReviewListWithFilter({ reviews, hideToolbar = false }: Props) {
   const [opponentFilter, setOpponentFilter] = useState('')
 
   const filteredReviews = useMemo(() => {
@@ -18,6 +18,7 @@ export default function ReviewListWithFilter({ reviews }: Props) {
 
   return (
     <>
+      {!hideToolbar && (
       <div className="mb-4 flex items-center justify-between">
         <Link
           href="/analysis"
@@ -39,6 +40,7 @@ export default function ReviewListWithFilter({ reviews }: Props) {
           />
         </div>
       </div>
+      )}
 
       <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white/85 dark:border-zinc-700 dark:bg-zinc-900/80">
         <div className="overflow-x-auto">

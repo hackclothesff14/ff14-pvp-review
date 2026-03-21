@@ -1,5 +1,22 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Supabase（データベース）
+
+大会記録・一覧の区別のために `reviews` テーブルに `record_type` などが必要です。**マイグレーション未適用のまま保存すると**、次のようなエラーになります。
+
+> `Could not find the 'record_type' column of 'reviews' in the schema cache`
+
+### 対処（必ず接続している Supabase プロジェクトで実行）
+
+1. [Supabase](https://supabase.com) → 該当プロジェクト → **SQL Editor**
+2. 次のファイルの内容を**そのまま**貼り付けて **Run** する:
+
+   [`supabase/migrations/004_reviews_record_type.sql`](./supabase/migrations/004_reviews_record_type.sql)
+
+3. 実行後、一覧ページを再読み込みし、もう一度保存を試す。
+
+CLI でリンク済みなら `supabase db push` でも同じマイグレーションを適用できます。
+
 ## Getting Started
 
 First, run the development server:

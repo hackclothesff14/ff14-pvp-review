@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { Review } from '@/lib/types'
@@ -24,14 +24,86 @@ import {
   type VideoEntry,
 } from '@/lib/constants'
 
-type Props = {
-  initial?: Review | null
+/** Supabase のスキーマ未反映時に分かりやすい文言を足す */
+function formatSupabaseSaveError(message: string): string {
+  if (message.includes('record_type') && message.includes('reviews')) {
+    return `${message}\n\n【対処】Supabase の SQL Editor で \`supabase/migrations/004_reviews_record_type.sql\` を実行してください（README「Supabase（データベース）」参照）。`
+  }
+  return message
 }
 
-function defaultMatches(initial?: Review | null): MatchResult[] {
-  const parsed = parseMatchResults(initial?.matches)
-  if (parsed.length > 0) return parsed
+type Props = {
+  initial?: Review | null
+  /**
+   * `reviews/new?type=tournament` のようなクエリによるモード切り替えを、
+   * SSRとクライアント初期レンダリングで一致させるための上書き値。
+   */
+  tournamentMode?: boolean
+}
+
+function defaultMatches(initial: Review | null | undefined): MatchResult[] {
+  if (initial) {
+    const parsed = parseMatchResults(initial.matches)
+    if (parsed.length > 0) return parsed
+    return [getDefaultMatch()]
+  }
+  // 新規（スクリム・大会共通）: 試合1の入力欄を表示
   return [getDefaultMatch()]
+}
+
+/** 大会: 対戦相手1組ごとに試合をまとめる */
+type TournamentGroup = {
+  opponent_name: string
+  matches: MatchResult[]
+}
+
+function stripMatchOpponentName(m: MatchResult): MatchResult {
+  return { ...m, opponent_name: '' }
+}
+
+function tournamentGroupsToFlat(groups: TournamentGroup[]): MatchResult[] {
+  return groups.flatMap((g) =>
+    g.matches.map((m) => ({ ...m, opponent_name: g.opponent_name }))
+  )
+}
+
+/** DB上のフラットな試合配列を、対戦相手名が変わるごとにグループ化 */
+function flatMatchesToTournamentGroups(flat: MatchResult[]): TournamentGroup[] {
+  if (flat.length === 0) return [{ opponent_name: '', matches: [getDefaultMatch()] }]
+  const groups: TournamentGroup[] = []
+  for (const m of flat) {
+    const on = (m.opponent_name ?? '').trim()
+    const last = groups[groups.length - 1]
+    if (last && (last.opponent_name ?? '').trim() === on) {
+      last.matches.push(stripMatchOpponentName(m))
+    } else {
+      groups.push({ opponent_name: m.opponent_name ?? '', matches: [stripMatchOpponentName(m)] })
+    }
+  }
+  return groups
+}
+
+function initTournamentGroups(initial?: Review | null): TournamentGroup[] {
+  if (!initial) return [{ opponent_name: '', matches: [getDefaultMatch()] }]
+  const parsed = parseMatchResults(initial.matches)
+  if (parsed.length === 0) return [{ opponent_name: '', matches: [getDefaultMatch()] }]
+  return flatMatchesToTournamentGroups(parsed)
+}
+
+function globalToLocal(globalIdx: number, groups: TournamentGroup[]): { gi: number; mi: number } | null {
+  let rem = globalIdx
+  for (let gi = 0; gi < groups.length; gi++) {
+    const len = groups[gi].matches.length
+    if (rem < len) return { gi, mi: rem }
+    rem -= len
+  }
+  return null
+}
+
+function localToGlobal(gi: number, mi: number, groups: TournamentGroup[]): number {
+  let idx = 0
+  for (let g = 0; g < gi; g++) idx += groups[g].matches.length
+  return idx + mi
 }
 
 /** パースに失敗した場合の元の matches 文字列を保持（保存時に空で上書きしないため） */
@@ -54,21 +126,82 @@ function contentToHtml(raw: string): string {
     .replace(/\n/g, '<br>')
 }
 
-export default function ReviewForm({ initial }: Props) {
+export default function ReviewForm({ initial, tournamentMode }: Props) {
   const router = useRouter()
+  // `reviews/new` 側で `tournamentMode` を確定して渡すため、ここでは `useSearchParams` を使わない。
+  // SSR/CSR差分による Hydration mismatch を避ける。
+  const isTournamentNew = typeof tournamentMode === 'boolean' ? tournamentMode : false
+  const isTournamentExisting = initial?.record_type === 'tournament'
+  const isTournamentMode = isTournamentNew || isTournamentExisting
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [matchResults, setMatchResults] = useState<MatchResult[]>(() => defaultMatches(initial))
+  const [matchResults, setMatchResults] = useState<MatchResult[]>(() =>
+    isTournamentMode ? [] : defaultMatches(initial)
+  )
+  const [tournamentGroups, setTournamentGroups] = useState<TournamentGroup[]>(() =>
+    isTournamentMode ? initTournamentGroups(initial ?? undefined) : []
+  )
+
+  const displayFlatMatches = useMemo(() => {
+    if (!isTournamentMode) return matchResults
+    return tournamentGroupsToFlat(tournamentGroups)
+  }, [isTournamentMode, matchResults, tournamentGroups])
+
   const [form, setForm] = useState({
     review_date: initial?.review_date ?? '',
     opponent: initial?.opponent ?? '',
     content: initial?.content ?? '',
   })
+  /** 大会のみ（DB の result_summary） */
+  const [resultSummary, setResultSummary] = useState(() => (initial?.result_summary ?? '').trim())
   const [videos, setVideos] = useState<VideoEntry[]>(() => parseVideoUrl(initial?.video_url))
 
-  const addMatch = () => setMatchResults((m) => [...m, getDefaultMatch()])
+  /** スクリム: 試合を1つ追加。大会: 最後の対戦相手グループに試合を1つ追加 */
+  const addMatch = () => {
+    if (!isTournamentMode) {
+      setMatchResults((m) => [...m, getDefaultMatch()])
+      return
+    }
+    setTournamentGroups((gs) => {
+      if (gs.length === 0) return [{ opponent_name: '', matches: [getDefaultMatch()] }]
+      const next = gs.map((g) => ({ ...g, matches: g.matches.map((m) => ({ ...m })) }))
+      const lastG = next[next.length - 1]
+      lastG.matches.push(getDefaultMatch())
+      return next
+    })
+  }
+
+  /** 大会: 新しい対戦相手欄＋その下に試合1件分のブロックを追加 */
+  const addOpponentAndMatch = () => {
+    setTournamentGroups((gs) => [...gs, { opponent_name: '', matches: [getDefaultMatch()] }])
+  }
+
+  const updateGroupOpponent = (gi: number, v: string) => {
+    setTournamentGroups((gs) => gs.map((g, i) => (i === gi ? { ...g, opponent_name: v } : g)))
+  }
+
   const removeMatch = (index: number) => {
-    setMatchResults((m) => m.filter((_, i) => i !== index))
+    if (!isTournamentMode) {
+      setMatchResults((m) => m.filter((_, i) => i !== index))
+      setCollapsedAnalysisIndices((prev) => {
+        const next = new Set<number>()
+        prev.forEach((i) => {
+          if (i < index) next.add(i)
+          else if (i > index) next.add(i - 1)
+        })
+        return next
+      })
+      return
+    }
+    setTournamentGroups((gs) => {
+      const loc = globalToLocal(index, gs)
+      if (!loc) return gs
+      const next = gs.map((g) => ({ ...g, matches: [...g.matches] }))
+      next[loc.gi].matches.splice(loc.mi, 1)
+      if (next[loc.gi].matches.length === 0) next.splice(loc.gi, 1)
+      if (next.length === 0) return [{ opponent_name: '', matches: [getDefaultMatch()] }]
+      return next
+    })
     setCollapsedAnalysisIndices((prev) => {
       const next = new Set<number>()
       prev.forEach((i) => {
@@ -78,33 +211,74 @@ export default function ReviewForm({ initial }: Props) {
       return next
     })
   }
+
   const updateMatch = (index: number, field: keyof MatchResult, value: string | boolean | MemberJobPair[] | string[]) => {
-    setMatchResults((m) => m.map((x, i) => (i === index ? { ...x, [field]: value } : x)))
+    if (!isTournamentMode) {
+      setMatchResults((m) => m.map((x, i) => (i === index ? { ...x, [field]: value } : x)))
+      return
+    }
+    setTournamentGroups((gs) => {
+      const loc = globalToLocal(index, gs)
+      if (!loc) return gs
+      const next = gs.map((g) => ({ ...g, matches: g.matches.map((x) => ({ ...x })) }))
+      next[loc.gi].matches[loc.mi] = { ...next[loc.gi].matches[loc.mi], [field]: value }
+      return next
+    })
   }
 
   const updateMatchOpponentJob = (matchIndex: number, slotIndex: number, value: string) => {
-    setMatchResults((m) =>
-      m.map((x, i) =>
-        i === matchIndex
-          ? { ...x, opponent_jobs: x.opponent_jobs.map((v, si) => (si === slotIndex ? value : v)) }
-          : x
+    if (!isTournamentMode) {
+      setMatchResults((m) =>
+        m.map((x, i) =>
+          i === matchIndex
+            ? { ...x, opponent_jobs: x.opponent_jobs.map((v, si) => (si === slotIndex ? value : v)) }
+            : x
+        )
       )
-    )
+      return
+    }
+    setTournamentGroups((gs) => {
+      const loc = globalToLocal(matchIndex, gs)
+      if (!loc) return gs
+      const next = gs.map((g) => ({ ...g, matches: g.matches.map((x) => ({ ...x })) }))
+      const row = next[loc.gi].matches[loc.mi]
+      next[loc.gi].matches[loc.mi] = {
+        ...row,
+        opponent_jobs: row.opponent_jobs.map((v, si) => (si === slotIndex ? value : v)),
+      }
+      return next
+    })
   }
 
   const updateMatchPair = (matchIndex: number, pairIndex: number, field: 'member' | 'job', value: string) => {
-    setMatchResults((m) =>
-      m.map((x, i) =>
-        i === matchIndex
-          ? {
-              ...x,
-              member_jobs: x.member_jobs.map((p, pi) =>
-                pi === pairIndex ? { ...p, [field]: value } : p
-              ),
-            }
-          : x
+    if (!isTournamentMode) {
+      setMatchResults((m) =>
+        m.map((x, i) =>
+          i === matchIndex
+            ? {
+                ...x,
+                member_jobs: x.member_jobs.map((p, pi) =>
+                  pi === pairIndex ? { ...p, [field]: value } : p
+                ),
+              }
+            : x
+        )
       )
-    )
+      return
+    }
+    setTournamentGroups((gs) => {
+      const loc = globalToLocal(matchIndex, gs)
+      if (!loc) return gs
+      const next = gs.map((g) => ({ ...g, matches: g.matches.map((x) => ({ ...x })) }))
+      const row = next[loc.gi].matches[loc.mi]
+      next[loc.gi].matches[loc.mi] = {
+        ...row,
+        member_jobs: row.member_jobs.map((p, pi) =>
+          pi === pairIndex ? { ...p, [field]: value } : p
+        ),
+      }
+      return next
+    })
   }
 
   const contentRef = useRef<HTMLDivElement>(null)
@@ -113,6 +287,8 @@ export default function ReviewForm({ initial }: Props) {
   const memberDropdownRef = useRef<HTMLDivElement>(null)
   const opponentListRef = useRef<HTMLDivElement>(null)
   const preserveMatchesRef = useRef<string | null>(getInitialMatchesRef(initial))
+  /** 振り返り欄の「未編集時の innerHTML」（ブラウザ正規化後）と比較するための基準 */
+  const contentBaselineRef = useRef<string | null>(null)
   const [contentFormatActive, setContentFormatActive] = useState({ bold: false, underline: false, strikeThrough: false })
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false)
   const [memberDropdownOpen, setMemberDropdownOpen] = useState<{ match: number; pair: number } | null>(null)
@@ -121,9 +297,10 @@ export default function ReviewForm({ initial }: Props) {
   const [editingVideoUrlIndex, setEditingVideoUrlIndex] = useState<number | null>(null)
   const [collapsedAnalysisIndices, setCollapsedAnalysisIndices] = useState<Set<number>>(new Set())
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!contentRef.current) return
     contentRef.current.innerHTML = contentToHtml(initial?.content ?? form.content)
+    contentBaselineRef.current = contentRef.current.innerHTML
   }, [initial?.id])
 
   useEffect(() => {
@@ -171,7 +348,7 @@ export default function ReviewForm({ initial }: Props) {
 
   const copyPreviousMatchTo = (matchIndex: number) => {
     if (matchIndex <= 0) return
-    const prev = matchResults[matchIndex - 1]
+    const prev = displayFlatMatches[matchIndex - 1]
     updateMatch(
       matchIndex,
       'member_jobs',
@@ -184,11 +361,18 @@ export default function ReviewForm({ initial }: Props) {
     e.preventDefault()
     setLoading(true)
     setError(null)
+    if (isTournamentMode && !initial?.id) {
+      if (!form.opponent.trim()) {
+        setError('大会名を入力してください')
+        setLoading(false)
+        return
+      }
+    }
     const contentHtml = contentRef.current?.innerHTML
     const matches =
-      initial?.id && matchResults.length === 0 && preserveMatchesRef.current
+      initial?.id && displayFlatMatches.length === 0 && preserveMatchesRef.current
         ? preserveMatchesRef.current
-        : serializeMatchResults(matchResults)
+        : serializeMatchResults(displayFlatMatches)
     // 編集中に contentRef が未反映で空になる場合、既存の振り返りを空で上書きしない
     const rawContent = contentHtml !== undefined ? contentHtml : form.content
     const hasExistingContent = (initial?.content ?? '').trim() !== ''
@@ -196,7 +380,7 @@ export default function ReviewForm({ initial }: Props) {
       initial?.id && (rawContent ?? '').trim() === '' && hasExistingContent
         ? (initial.content ?? '')
         : (rawContent ?? '')
-    const payload = {
+    const payload: Record<string, unknown> = {
       ...form,
       content: contentToSave,
       members: '',
@@ -204,11 +388,18 @@ export default function ReviewForm({ initial }: Props) {
       matches,
       video_url: serializeVideos(videos),
     }
+    if (initial?.id) {
+      payload.record_type = initial.record_type ?? 'scrim'
+    } else {
+      payload.record_type = isTournamentNew ? 'tournament' : 'scrim'
+    }
+    payload.result_summary = isTournamentMode ? (resultSummary.trim() || null) : null
+
     const supabase = createClient()
     if (initial?.id) {
       const { error: err } = await supabase.from('reviews').update(payload).eq('id', initial.id)
       if (err) {
-        setError(err.message)
+        setError(formatSupabaseSaveError(err.message))
         setLoading(false)
         return
       }
@@ -221,7 +412,7 @@ export default function ReviewForm({ initial }: Props) {
     } else {
       const { data: inserted, error: err } = await supabase.from('reviews').insert(payload).select('id').single()
       if (err) {
-        setError(err.message)
+        setError(formatSupabaseSaveError(err.message))
         setLoading(false)
         return
       }
@@ -239,24 +430,332 @@ export default function ReviewForm({ initial }: Props) {
   }
 
   const hasUnsavedChanges = (): boolean => {
-    const currentMatches = serializeMatchResults(matchResults)
+    const currentMatches = serializeMatchResults(displayFlatMatches)
     const currentVideos = serializeVideos(videos)
-    const currentContent = (contentRef.current?.innerHTML ?? form.content ?? '').trim()
+    const currentContent = (contentRef.current?.innerHTML ?? '').trim()
     if (initial) {
-      if (currentMatches !== (initial.matches ?? '[]')) return true
-      if (currentVideos !== (initial.video_url ?? '')) return true
+      // DB の生文字列ではなく、パース→シリアライズで正規化して比較（JSON の空白差などで誤検知しない）
+      const baselineMatches = serializeMatchResults(parseMatchResults(initial.matches))
+      if (currentMatches !== baselineMatches) return true
+      const baselineVideos = serializeVideos(parseVideoUrl(initial.video_url))
+      if (currentVideos !== baselineVideos) return true
       if ((form.review_date ?? '') !== (initial.review_date ?? '')) return true
       if ((form.opponent ?? '') !== (initial.opponent ?? '')) return true
-      if (currentContent !== (initial.content ?? '').trim()) return true
+      // 振り返り: DB の文字列と innerHTML はブラウザが異なる形に正規化するため、読み込み直後の innerHTML を基準にする
+      const baselineContent = (contentBaselineRef.current ?? '').trim()
+      if (currentContent !== baselineContent) return true
+      if (isTournamentMode && resultSummary.trim() !== (initial.result_summary ?? '').trim()) return true
       return false
     }
-    const defaultMatchesStr = serializeMatchResults([getDefaultMatch()])
+    const defaultMatchesStr = serializeMatchResults(
+      isTournamentMode ? tournamentGroupsToFlat(initTournamentGroups(null)) : [getDefaultMatch()]
+    )
     if (currentMatches !== defaultMatchesStr) return true
     if (currentVideos !== '[]') return true
     if ((form.review_date ?? '').trim()) return true
     if ((form.opponent ?? '').trim()) return true
     if (currentContent) return true
+    if (isTournamentMode && resultSummary.trim()) return true
     return false
+  }
+
+  const renderMatchCard = (match: MatchResult, matchIndex: number, cardKey: string | number) => {
+    const isColoredMatch = match.result === '勝ち' || match.result === '負け'
+    const labelClass = isColoredMatch ? 'text-white' : 'text-zinc-500 dark:text-zinc-400'
+    const headingClass = isColoredMatch ? 'text-white' : 'text-zinc-600 dark:text-zinc-400'
+    const mutedClass = isColoredMatch ? 'text-white' : 'text-zinc-700 dark:text-zinc-300'
+
+    return (
+      <div
+        key={cardKey}
+        className={`rounded-lg border p-4 ${
+          match.result === '勝ち'
+            ? 'border-[#8a4526] bg-[#a0522d] dark:border-[#6d3820] dark:bg-[#a0522d]'
+            : match.result === '負け'
+              ? 'border-[#3a6d99] bg-[#4682b4] dark:border-[#3a6d99] dark:bg-[#4682b4]'
+              : 'border-zinc-200 bg-white dark:border-zinc-600 dark:bg-zinc-900'
+        }`}
+      >
+        <div className="mb-3 flex items-center justify-between">
+          <span className={`text-sm font-medium ${headingClass}`}>試合 {matchIndex + 1}</span>
+          <div className="flex gap-2">
+            {matchIndex > 0 && (
+              <button
+                type="button"
+                onClick={() => copyPreviousMatchTo(matchIndex)}
+                className={`rounded border px-2 py-1 text-xs ${isColoredMatch ? 'border-white bg-zinc-600/60 text-white hover:bg-zinc-600/80 dark:border-white dark:bg-zinc-600/60 dark:hover:bg-zinc-600/80' : 'border-zinc-300 bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-600'}`}
+              >
+                前の試合を引き継ぐ
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => removeMatch(matchIndex)}
+              className={`text-sm ${isColoredMatch ? 'text-white hover:opacity-90' : 'text-zinc-500 hover:text-red-600 dark:hover:text-red-400'}`}
+              aria-label="この試合を削除"
+            >
+              削除
+            </button>
+          </div>
+        </div>
+
+        <div className="mb-3 flex flex-col gap-4 sm:flex-row">
+          <div className="min-w-0 flex-1">
+            <span className={`mb-1.5 block text-xs font-medium ${labelClass}`}>メンバー・ジョブ</span>
+            <div className="space-y-2 rounded border border-amber-200 bg-amber-50/50 p-2 dark:border-amber-800/30 dark:bg-zinc-800/80">
+              {(match.member_jobs.length > 0 ? match.member_jobs : Array.from({ length: DEFAULT_MEMBER_ROWS }, () => ({ member: '', job: '' }))).slice(0, DEFAULT_MEMBER_ROWS).map((pair, pairIndex) => {
+                const isCustomMember = pair.member && !MEMBERS_LIST.includes(pair.member as (typeof MEMBERS_LIST)[number])
+                const selectValue = isCustomMember ? CUSTOM_MEMBER_VALUE : (pair.member || '')
+                return (
+                  <div key={pairIndex} className="flex w-full flex-wrap items-center gap-2">
+                    <div className="flex min-w-0 flex-1 basis-0 items-center gap-1.5">
+                      {selectValue === CUSTOM_MEMBER_VALUE ? (
+                        <div
+                          ref={memberDropdownOpen?.match === matchIndex && memberDropdownOpen?.pair === pairIndex ? memberDropdownRef : undefined}
+                          className="relative flex min-w-0 flex-1 basis-0 items-center rounded-lg border border-zinc-300 bg-white dark:border-zinc-600 dark:bg-zinc-800"
+                        >
+                          <input
+                            type="text"
+                            placeholder="名前を直接入力"
+                            value={pair.member === ' ' ? '' : pair.member}
+                            onChange={(e) => updateMatchPair(matchIndex, pairIndex, 'member', e.target.value || ' ')}
+                            className="min-w-0 flex-1 border-0 bg-transparent px-2 py-1.5 text-sm text-zinc-900 outline-none dark:text-zinc-100"
+                            aria-label={`試合${matchIndex + 1} ${pairIndex + 1}行目: メンバー（直接入力）`}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setMemberDropdownOpen((prev) => (prev?.match === matchIndex && prev?.pair === pairIndex ? null : { match: matchIndex, pair: pairIndex }))}
+                            className="flex shrink-0 items-center justify-center rounded-r-md py-1.5 pr-2 text-zinc-500 dark:text-zinc-400"
+                            aria-label="リストを開く"
+                          >
+                            <span className="text-xs" aria-hidden>▼</span>
+                          </button>
+                          {memberDropdownOpen?.match === matchIndex && memberDropdownOpen?.pair === pairIndex && (
+                            <ul className="absolute left-0 right-0 top-full z-10 mt-0.5 max-h-48 overflow-auto rounded-lg border border-zinc-300 bg-white py-1 shadow-lg dark:border-zinc-600 dark:bg-zinc-800">
+                              <li>
+                                <button
+                                  type="button"
+                                  className="w-full px-2 py-1.5 text-left text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
+                                  onClick={() => { updateMatchPair(matchIndex, pairIndex, 'member', ''); setMemberDropdownOpen(null) }}
+                                >
+                                  選択してください
+                                </button>
+                              </li>
+                              {MEMBERS_LIST.map((m) => (
+                                <li key={m}>
+                                  <button
+                                    type="button"
+                                    className="w-full px-2 py-1.5 text-left text-sm text-zinc-900 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-700"
+                                    onClick={() => { updateMatchPair(matchIndex, pairIndex, 'member', m); setMemberDropdownOpen(null) }}
+                                  >
+                                    {m}
+                                  </button>
+                                </li>
+                              ))}
+                              <li>
+                                <button
+                                  type="button"
+                                  className="w-full px-2 py-1.5 text-left text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
+                                  onClick={() => setMemberDropdownOpen(null)}
+                                >
+                                  その他（直接入力）
+                                </button>
+                              </li>
+                            </ul>
+                          )}
+                        </div>
+                      ) : (
+                        <select
+                          value={selectValue}
+                          onChange={(e) => {
+                            const v = e.target.value
+                            updateMatchPair(matchIndex, pairIndex, 'member', v === CUSTOM_MEMBER_VALUE ? ' ' : v)
+                          }}
+                          className="w-full rounded-lg border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                          aria-label={`試合${matchIndex + 1} ${pairIndex + 1}行目: メンバー`}
+                        >
+                          <option value="">選択してください</option>
+                          {MEMBERS_LIST.map((m) => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                          <option value={CUSTOM_MEMBER_VALUE}>その他（直接入力）</option>
+                        </select>
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1 basis-0">
+                      <select
+                        value={pair.job}
+                        onChange={(e) => updateMatchPair(matchIndex, pairIndex, 'job', e.target.value)}
+                        className={`w-full rounded-lg border px-2 py-1.5 text-sm ${pair.job ? 'pl-8' : ''} ${getJobCategoryClass(pair.job) || 'border-zinc-300 text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100'}`}
+                        aria-label={`試合${matchIndex + 1} ${pairIndex + 1}行目: ジョブ`}
+                        style={pair.job ? { backgroundImage: `url(${getJobIconPath(pair.job)})`, backgroundRepeat: 'no-repeat', backgroundPosition: '6px center', backgroundSize: '20px 20px' } : undefined}
+                      >
+                        <option value="">選択してください</option>
+                        {JOBS_LIST.map((j) => (
+                          <option key={j} value={j}>{j}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="min-w-0 shrink-0 sm:w-52">
+            <label className={`mb-1.5 block text-xs font-medium ${labelClass}`}>相手チームのジョブ</label>
+            <div className="space-y-2 rounded border border-violet-200 bg-violet-50/50 p-2 dark:border-violet-800/30 dark:bg-zinc-800/80">
+              {[0, 1, 2, 3, 4].map((slotIndex) => {
+                const job = match.opponent_jobs[slotIndex] ?? ''
+                return (
+                  <div key={slotIndex}>
+                    <select
+                      value={job}
+                      onChange={(e) => updateMatchOpponentJob(matchIndex, slotIndex, e.target.value)}
+                      className={`w-full rounded-lg border px-2 py-1.5 text-sm ${job ? 'pl-8' : ''} ${getJobCategoryClass(job) || 'border-zinc-300 text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100'}`}
+                      aria-label={`相手${slotIndex + 1}人目 ジョブ`}
+                      style={job ? { backgroundImage: `url(${getJobIconPath(job)})`, backgroundRepeat: 'no-repeat', backgroundPosition: '6px center', backgroundSize: '20px 20px' } : undefined}
+                    >
+                      <option value="">選択</option>
+                      {JOBS_LIST.map((j) => (
+                        <option key={j} value={j}>{j}</option>
+                      ))}
+                    </select>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div className="mb-3">
+          <label className={`mb-0.5 block text-xs font-medium ${labelClass}`}>マップ</label>
+          <select
+            value={match.map}
+            onChange={(e) => updateMatch(matchIndex, 'map', e.target.value)}
+            className="w-full max-w-xs rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+          >
+            <option value="">選択してください</option>
+            {MAPS_LIST.map((m) => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="mb-3 flex flex-wrap items-end gap-3">
+          <div className="w-24 shrink-0">
+            <label className={`mb-0.5 block text-xs font-medium ${labelClass}`}>勝ち負け</label>
+            <select
+              value={match.result}
+              onChange={(e) => updateMatch(matchIndex, 'result', e.target.value)}
+              className="w-full rounded-lg border border-zinc-300 px-2 py-2 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+            >
+              <option value="">選択</option>
+              {RESULT_LIST.map((r) => (
+                <option key={r} value={r}>{r}</option>
+              ))}
+            </select>
+          </div>
+          <div className="w-28 shrink-0">
+            <label className={`mb-0.5 block text-xs font-medium ${labelClass}`}>OT突入時状況</label>
+            <select
+              value={match.ot_situation}
+              onChange={(e) => updateMatch(matchIndex, 'ot_situation', e.target.value)}
+              className="w-full rounded-lg border border-zinc-300 px-2 py-2 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+            >
+              <option value="">選択</option>
+              {OT_SITUATION_LIST.map((o) => (
+                <option key={o} value={o}>{o}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-end gap-2">
+            <div>
+              <label className={`mb-0.5 block text-xs font-medium ${labelClass}`}>残り 分</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                placeholder="分"
+                value={match.end_minutes}
+                onChange={(e) => updateMatch(matchIndex, 'end_minutes', e.target.value)}
+                className="w-14 rounded-lg border border-zinc-300 px-2 py-2 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+              />
+            </div>
+            <div>
+              <label className={`mb-0.5 block text-xs font-medium ${labelClass}`}>秒</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                placeholder="秒"
+                value={match.end_seconds}
+                onChange={(e) => updateMatch(matchIndex, 'end_seconds', e.target.value)}
+                className="w-14 rounded-lg border border-zinc-300 px-2 py-2 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+              />
+            </div>
+            <label className="flex items-center gap-1.5 pb-2">
+              <input
+                type="checkbox"
+                checked={match.is_ot}
+                onChange={(e) => updateMatch(matchIndex, 'is_ot', e.target.checked)}
+                className="rounded border-zinc-300 text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800"
+              />
+              <span className={`text-sm ${mutedClass}`}>OT</span>
+            </label>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="w-24 shrink-0">
+            <label className={`mb-0.5 block text-xs font-medium ${labelClass}`}>クリスタル 自</label>
+            <div className="flex items-center gap-1 rounded-lg border border-zinc-300 dark:border-zinc-600">
+              <input
+                type="text"
+                inputMode="decimal"
+                placeholder="50"
+                value={match.crystal_self.replace(/%/g, '')}
+                onChange={(e) => {
+                  const half = e.target.value.replace(/[０-９．]/g, (c) =>
+                    c === '．' ? '.' : String.fromCharCode(c.charCodeAt(0) - 0xfee0)
+                  )
+                  const filtered = half.replace(/[^0-9.]/g, '')
+                  const parts = filtered.split('.')
+                  const num = parts.length > 1
+                    ? parts[0] + '.' + parts[1].slice(0, 1)
+                    : parts[0]
+                  updateMatch(matchIndex, 'crystal_self', num ? `${num}%` : '')
+                }}
+                className="w-full rounded-l-lg border-0 px-2 py-2 text-sm text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100"
+              />
+              <span className={`shrink-0 pr-2 text-sm ${labelClass}`}>%</span>
+            </div>
+          </div>
+          <div className="w-24 shrink-0">
+            <label className={`mb-0.5 block text-xs font-medium ${labelClass}`}>クリスタル 相手</label>
+            <div className="flex items-center gap-1 rounded-lg border border-zinc-300 dark:border-zinc-600">
+              <input
+                type="text"
+                inputMode="decimal"
+                placeholder="50"
+                value={match.crystal_opponent.replace(/%/g, '')}
+                onChange={(e) => {
+                  const half = e.target.value.replace(/[０-９．]/g, (c) =>
+                    c === '．' ? '.' : String.fromCharCode(c.charCodeAt(0) - 0xfee0)
+                  )
+                  const filtered = half.replace(/[^0-9.]/g, '')
+                  const parts = filtered.split('.')
+                  const num = parts.length > 1
+                    ? parts[0] + '.' + parts[1].slice(0, 1)
+                    : parts[0]
+                  updateMatch(matchIndex, 'crystal_opponent', num ? `${num}%` : '')
+                }}
+                className="w-full rounded-l-lg border-0 px-2 py-2 text-sm text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100"
+              />
+              <span className={`shrink-0 pr-2 text-sm ${labelClass}`}>%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   const handleBackClick = () => {
@@ -284,7 +783,7 @@ export default function ReviewForm({ initial }: Props) {
       </button>
       <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
       {error && (
-        <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-400">
+        <p className="whitespace-pre-wrap rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-400">
           {error}
         </p>
       )}
@@ -317,66 +816,84 @@ export default function ReviewForm({ initial }: Props) {
           />
         </div>
       </div>
-      <div ref={opponentListRef} className="relative">
-        <label htmlFor="opponent" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-          対戦相手
-        </label>
-        <div className="flex flex-wrap items-center gap-2">
+      {/* 日付の直下: 大会は「大会名」、スクリムは「対戦相手」（スクリムは従来どおり） */}
+      {isTournamentMode ? (
+        <div>
+          <label htmlFor="tournament_name" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+            大会名
+          </label>
           <input
-            id="opponent"
+            id="tournament_name"
             type="text"
             value={form.opponent}
             onChange={(e) => setForm((f) => ({ ...f, opponent: e.target.value }))}
-            className="min-w-0 flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
-            placeholder="例: 〇〇チーム"
+            className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+            placeholder="例: 〇〇大会"
+            required
           />
-          <button
-            type="button"
-            onClick={async () => {
-              if (showOpponentList) {
-                setShowOpponentList(false)
-                return
-              }
-              try {
-                const res = await fetch('/api/opponents')
-                if (res.ok) {
-                  const names = (await res.json()) as string[]
-                  setPastOpponents(names)
+        </div>
+      ) : (
+        <div ref={opponentListRef} className="relative">
+          <label htmlFor="opponent" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+            対戦相手
+          </label>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              id="opponent"
+              type="text"
+              value={form.opponent}
+              onChange={(e) => setForm((f) => ({ ...f, opponent: e.target.value }))}
+              className="min-w-0 flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+              placeholder="例: 〇〇チーム"
+            />
+            <button
+              type="button"
+              onClick={async () => {
+                if (showOpponentList) {
+                  setShowOpponentList(false)
+                  return
+                }
+                try {
+                  const res = await fetch('/api/opponents')
+                  if (res.ok) {
+                    const names = (await res.json()) as string[]
+                    setPastOpponents(names)
+                    setShowOpponentList(true)
+                  }
+                } catch {
+                  setPastOpponents([])
                   setShowOpponentList(true)
                 }
-              } catch {
-                setPastOpponents([])
-                setShowOpponentList(true)
-              }
-            }}
-            className="shrink-0 rounded-lg border border-zinc-300 bg-zinc-100 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-200 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600"
-          >
-            対戦歴から選ぶ
-          </button>
+              }}
+              className="shrink-0 rounded-lg border border-zinc-300 bg-zinc-100 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-200 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600"
+            >
+              対戦歴から選ぶ
+            </button>
+          </div>
+          {showOpponentList && (
+            <ul className="absolute left-0 right-0 top-full z-10 mt-1 max-h-48 overflow-auto rounded-lg border border-zinc-300 bg-white py-1 shadow-lg dark:border-zinc-600 dark:bg-zinc-800">
+              {pastOpponents.length === 0 ? (
+                <li className="px-3 py-2 text-sm text-zinc-500 dark:text-zinc-400">対戦歴がありません</li>
+              ) : (
+                pastOpponents.map((name) => (
+                  <li key={name}>
+                    <button
+                      type="button"
+                      className="w-full px-3 py-2 text-left text-sm text-zinc-900 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-700"
+                      onClick={() => {
+                        setForm((f) => ({ ...f, opponent: name }))
+                        setShowOpponentList(false)
+                      }}
+                    >
+                      {name}
+                    </button>
+                  </li>
+                ))
+              )}
+            </ul>
+          )}
         </div>
-        {showOpponentList && (
-          <ul className="absolute left-0 right-0 top-full z-10 mt-1 max-h-48 overflow-auto rounded-lg border border-zinc-300 bg-white py-1 shadow-lg dark:border-zinc-600 dark:bg-zinc-800">
-            {pastOpponents.length === 0 ? (
-              <li className="px-3 py-2 text-sm text-zinc-500 dark:text-zinc-400">対戦歴がありません</li>
-            ) : (
-              pastOpponents.map((name) => (
-                <li key={name}>
-                  <button
-                    type="button"
-                    className="w-full px-3 py-2 text-left text-sm text-zinc-900 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-700"
-                    onClick={() => {
-                      setForm((f) => ({ ...f, opponent: name }))
-                      setShowOpponentList(false)
-                    }}
-                  >
-                    {name}
-                  </button>
-                </li>
-              ))
-            )}
-          </ul>
-        )}
-      </div>
+      )}
 
       <div>
         <div className="mb-2">
@@ -384,328 +901,77 @@ export default function ReviewForm({ initial }: Props) {
             試合ごとの結果
           </span>
         </div>
-        <div className="space-y-4 rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800">
-          {matchResults.map((match, matchIndex) => {
-            const isColoredMatch = match.result === '勝ち' || match.result === '負け'
-            const labelClass = isColoredMatch ? 'text-white' : 'text-zinc-500 dark:text-zinc-400'
-            const headingClass = isColoredMatch ? 'text-white' : 'text-zinc-600 dark:text-zinc-400'
-            const mutedClass = isColoredMatch ? 'text-white' : 'text-zinc-700 dark:text-zinc-300'
-            return (
-            <div
-              key={matchIndex}
-              className={`rounded-lg border p-4 ${
-                match.result === '勝ち'
-                  ? 'border-[#8a4526] bg-[#a0522d] dark:border-[#6d3820] dark:bg-[#a0522d]'
-                  : match.result === '負け'
-                    ? 'border-[#3a6d99] bg-[#4682b4] dark:border-[#3a6d99] dark:bg-[#4682b4]'
-                    : 'border-zinc-200 bg-white dark:border-zinc-600 dark:bg-zinc-900'
-              }`}
-            >
-              <div className="mb-3 flex items-center justify-between">
-                <span className={`text-sm font-medium ${headingClass}`}>試合 {matchIndex + 1}</span>
-                <div className="flex gap-2">
-                  {matchIndex > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => copyPreviousMatchTo(matchIndex)}
-                      className={`rounded border px-2 py-1 text-xs ${isColoredMatch ? 'border-white bg-zinc-600/60 text-white hover:bg-zinc-600/80 dark:border-white dark:bg-zinc-600/60 dark:hover:bg-zinc-600/80' : 'border-zinc-300 bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-600'}`}
-                    >
-                      前の試合を引き継ぐ
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => removeMatch(matchIndex)}
-                    className={`text-sm ${isColoredMatch ? 'text-white hover:opacity-90' : 'text-zinc-500 hover:text-red-600 dark:hover:text-red-400'}`}
-                    aria-label="この試合を削除"
-                  >
-                    削除
-                  </button>
-                </div>
-              </div>
-
-              {/* 自チーム メンバー・ジョブ と 相手チームのジョブ を横並び */}
-              <div className="mb-3 flex flex-col gap-4 sm:flex-row">
-                {/* この試合のメンバー・ジョブ（5人固定） */}
-                <div className="min-w-0 flex-1">
-                  <span className={`mb-1.5 block text-xs font-medium ${labelClass}`}>メンバー・ジョブ</span>
-                  <div className="space-y-2 rounded border border-amber-200 bg-amber-50/50 p-2 dark:border-amber-800/30 dark:bg-zinc-800/80">
-                    {(match.member_jobs.length > 0 ? match.member_jobs : Array.from({ length: DEFAULT_MEMBER_ROWS }, () => ({ member: '', job: '' }))).slice(0, DEFAULT_MEMBER_ROWS).map((pair, pairIndex) => {
-                      const isCustomMember = pair.member && !MEMBERS_LIST.includes(pair.member as (typeof MEMBERS_LIST)[number])
-                      const selectValue = isCustomMember ? CUSTOM_MEMBER_VALUE : (pair.member || '')
-                      return (
-                        <div key={pairIndex} className="flex w-full flex-wrap items-center gap-2">
-                          <div className="flex min-w-0 flex-1 basis-0 items-center gap-1.5">
-                            {selectValue === CUSTOM_MEMBER_VALUE ? (
-                              <div
-                                ref={memberDropdownOpen?.match === matchIndex && memberDropdownOpen?.pair === pairIndex ? memberDropdownRef : undefined}
-                                className="relative flex min-w-0 flex-1 basis-0 items-center rounded-lg border border-zinc-300 bg-white dark:border-zinc-600 dark:bg-zinc-800"
-                              >
-                                <input
-                                  type="text"
-                                  placeholder="名前を直接入力"
-                                  value={pair.member === ' ' ? '' : pair.member}
-                                  onChange={(e) => updateMatchPair(matchIndex, pairIndex, 'member', e.target.value || ' ')}
-                                  className="min-w-0 flex-1 border-0 bg-transparent px-2 py-1.5 text-sm text-zinc-900 outline-none dark:text-zinc-100"
-                                  aria-label={`試合${matchIndex + 1} ${pairIndex + 1}行目: メンバー（直接入力）`}
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => setMemberDropdownOpen((prev) => (prev?.match === matchIndex && prev?.pair === pairIndex ? null : { match: matchIndex, pair: pairIndex }))}
-                                  className="flex shrink-0 items-center justify-center rounded-r-md py-1.5 pr-2 text-zinc-500 dark:text-zinc-400"
-                                  aria-label="リストを開く"
-                                >
-                                  <span className="text-xs" aria-hidden>▼</span>
-                                </button>
-                                {memberDropdownOpen?.match === matchIndex && memberDropdownOpen?.pair === pairIndex && (
-                                  <ul className="absolute left-0 right-0 top-full z-10 mt-0.5 max-h-48 overflow-auto rounded-lg border border-zinc-300 bg-white py-1 shadow-lg dark:border-zinc-600 dark:bg-zinc-800">
-                                    <li>
-                                      <button
-                                        type="button"
-                                        className="w-full px-2 py-1.5 text-left text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
-                                        onClick={() => { updateMatchPair(matchIndex, pairIndex, 'member', ''); setMemberDropdownOpen(null) }}
-                                      >
-                                        選択してください
-                                      </button>
-                                    </li>
-                                    {MEMBERS_LIST.map((m) => (
-                                      <li key={m}>
-                                        <button
-                                          type="button"
-                                          className="w-full px-2 py-1.5 text-left text-sm text-zinc-900 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-700"
-                                          onClick={() => { updateMatchPair(matchIndex, pairIndex, 'member', m); setMemberDropdownOpen(null) }}
-                                        >
-                                          {m}
-                                        </button>
-                                      </li>
-                                    ))}
-                                    <li>
-                                      <button
-                                        type="button"
-                                        className="w-full px-2 py-1.5 text-left text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-700"
-                                        onClick={() => setMemberDropdownOpen(null)}
-                                      >
-                                        その他（直接入力）
-                                      </button>
-                                    </li>
-                                  </ul>
-                                )}
-                              </div>
-                            ) : (
-                              <select
-                                value={selectValue}
-                                onChange={(e) => {
-                                  const v = e.target.value
-                                  updateMatchPair(matchIndex, pairIndex, 'member', v === CUSTOM_MEMBER_VALUE ? ' ' : v)
-                                }}
-                                className="w-full rounded-lg border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
-                                aria-label={`試合${matchIndex + 1} ${pairIndex + 1}行目: メンバー`}
-                              >
-                                <option value="">選択してください</option>
-                                {MEMBERS_LIST.map((m) => (
-                                  <option key={m} value={m}>{m}</option>
-                                ))}
-                                <option value={CUSTOM_MEMBER_VALUE}>その他（直接入力）</option>
-                              </select>
-                            )}
-                          </div>
-                          <div className="min-w-0 flex-1 basis-0">
-                            <select
-                              value={pair.job}
-                              onChange={(e) => updateMatchPair(matchIndex, pairIndex, 'job', e.target.value)}
-                              className={`w-full rounded-lg border px-2 py-1.5 text-sm ${pair.job ? 'pl-8' : ''} ${getJobCategoryClass(pair.job) || 'border-zinc-300 text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100'}`}
-                              aria-label={`試合${matchIndex + 1} ${pairIndex + 1}行目: ジョブ`}
-                              style={pair.job ? { backgroundImage: `url(${getJobIconPath(pair.job)})`, backgroundRepeat: 'no-repeat', backgroundPosition: '6px center', backgroundSize: '20px 20px' } : undefined}
-                            >
-                              <option value="">選択してください</option>
-                              {JOBS_LIST.map((j) => (
-                                <option key={j} value={j}>{j}</option>
-                              ))}
-                            </select>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-
-                {/* 相手チームのジョブ（5人分・別セクション） */}
-                <div className="min-w-0 shrink-0 sm:w-52">
-                  <label className={`mb-1.5 block text-xs font-medium ${labelClass}`}>相手チームのジョブ</label>
-                  <div className="space-y-2 rounded border border-violet-200 bg-violet-50/50 p-2 dark:border-violet-800/30 dark:bg-zinc-800/80">
-                    {[0, 1, 2, 3, 4].map((slotIndex) => {
-                      const job = match.opponent_jobs[slotIndex] ?? ''
-                      return (
-                        <div key={slotIndex}>
-                          <select
-                            value={job}
-                            onChange={(e) => updateMatchOpponentJob(matchIndex, slotIndex, e.target.value)}
-                            className={`w-full rounded-lg border px-2 py-1.5 text-sm ${job ? 'pl-8' : ''} ${getJobCategoryClass(job) || 'border-zinc-300 text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100'}`}
-                            aria-label={`相手${slotIndex + 1}人目 ジョブ`}
-                            style={job ? { backgroundImage: `url(${getJobIconPath(job)})`, backgroundRepeat: 'no-repeat', backgroundPosition: '6px center', backgroundSize: '20px 20px' } : undefined}
-                          >
-                            <option value="">選択</option>
-                            {JOBS_LIST.map((j) => (
-                              <option key={j} value={j}>{j}</option>
-                            ))}
-                          </select>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              </div>
-
-              {/* マップ（1行目） */}
-              <div className="mb-3">
-                <label className={`mb-0.5 block text-xs font-medium ${labelClass}`}>マップ</label>
-                <select
-                  value={match.map}
-                  onChange={(e) => updateMatch(matchIndex, 'map', e.target.value)}
-                  className="w-full max-w-xs rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+        <div
+          className={
+            isTournamentMode
+              ? 'space-y-6'
+              : 'space-y-4 rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800'
+          }
+        >
+          {isTournamentMode
+            ? tournamentGroups.map((group, gi) => (
+                <div
+                  key={gi}
+                  className="rounded-xl border-2 border-zinc-300 bg-zinc-50 p-4 shadow-sm dark:border-zinc-600 dark:bg-zinc-900/90 dark:shadow-none"
                 >
-                  <option value="">選択してください</option>
-                  {MAPS_LIST.map((m) => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* 勝ち負け・OT突入時状況・残り 分秒（2行目） */}
-              <div className="mb-3 flex flex-wrap items-end gap-3">
-                <div className="w-24 shrink-0">
-                  <label className={`mb-0.5 block text-xs font-medium ${labelClass}`}>勝ち負け</label>
-                  <select
-                    value={match.result}
-                    onChange={(e) => updateMatch(matchIndex, 'result', e.target.value)}
-                    className="w-full rounded-lg border border-zinc-300 px-2 py-2 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
-                  >
-                    <option value="">選択</option>
-                    {RESULT_LIST.map((r) => (
-                      <option key={r} value={r}>{r}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="w-28 shrink-0">
-                  <label className={`mb-0.5 block text-xs font-medium ${labelClass}`}>OT突入時状況</label>
-                  <select
-                    value={match.ot_situation}
-                    onChange={(e) => updateMatch(matchIndex, 'ot_situation', e.target.value)}
-                    className="w-full rounded-lg border border-zinc-300 px-2 py-2 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
-                  >
-                    <option value="">選択</option>
-                    {OT_SITUATION_LIST.map((o) => (
-                      <option key={o} value={o}>{o}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="flex items-end gap-2">
-                  <div>
-                    <label className={`mb-0.5 block text-xs font-medium ${labelClass}`}>残り 分</label>
+                  <div className="mb-4 border-b border-zinc-200 pb-4 dark:border-zinc-700">
+                    <label
+                      htmlFor={`tournament_group_opponent_${gi}`}
+                      className="mb-2 block text-sm font-semibold text-zinc-800 dark:text-zinc-100"
+                    >
+                      対戦相手 {gi + 1}
+                    </label>
                     <input
+                      id={`tournament_group_opponent_${gi}`}
                       type="text"
-                      inputMode="numeric"
-                      placeholder="分"
-                      value={match.end_minutes}
-                      onChange={(e) => updateMatch(matchIndex, 'end_minutes', e.target.value)}
-                      className="w-14 rounded-lg border border-zinc-300 px-2 py-2 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                      value={group.opponent_name}
+                      onChange={(e) => updateGroupOpponent(gi, e.target.value)}
+                      placeholder="例: 〇〇チーム"
+                      className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                      aria-label={`対戦相手 ${gi + 1}`}
                     />
                   </div>
-                  <div>
-                    <label className={`mb-0.5 block text-xs font-medium ${labelClass}`}>秒</label>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      placeholder="秒"
-                      value={match.end_seconds}
-                      onChange={(e) => updateMatch(matchIndex, 'end_seconds', e.target.value)}
-                      className="w-14 rounded-lg border border-zinc-300 px-2 py-2 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
-                    />
-                  </div>
-                  <label className="flex items-center gap-1.5 pb-2">
-                    <input
-                      type="checkbox"
-                      checked={match.is_ot}
-                      onChange={(e) => updateMatch(matchIndex, 'is_ot', e.target.checked)}
-                      className="rounded border-zinc-300 text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800"
-                    />
-                    <span className={`text-sm ${mutedClass}`}>OT</span>
-                  </label>
-                </div>
-              </div>
-
-              {/* クリスタル輸送 自・相手（3行目） */}
-              <div className="flex flex-wrap items-end gap-3">
-                <div className="w-24 shrink-0">
-                  <label className={`mb-0.5 block text-xs font-medium ${labelClass}`}>クリスタル 自</label>
-                  <div className="flex items-center gap-1 rounded-lg border border-zinc-300 dark:border-zinc-600">
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      placeholder="50"
-                      value={match.crystal_self.replace(/%/g, '')}
-                      onChange={(e) => {
-                        const half = e.target.value.replace(/[０-９．]/g, (c) =>
-                          c === '．' ? '.' : String.fromCharCode(c.charCodeAt(0) - 0xfee0)
-                        )
-                        const filtered = half.replace(/[^0-9.]/g, '')
-                        const parts = filtered.split('.')
-                        const num = parts.length > 1
-                          ? parts[0] + '.' + parts[1].slice(0, 1)
-                          : parts[0]
-                        updateMatch(matchIndex, 'crystal_self', num ? `${num}%` : '')
-                      }}
-                      className="w-full rounded-l-lg border-0 px-2 py-2 text-sm text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100"
-                    />
-                    <span className={`shrink-0 pr-2 text-sm ${labelClass}`}>%</span>
+                  <div className="space-y-4 border-t border-zinc-200 pt-4 dark:border-zinc-700">
+                    {group.matches.map((match, mi) => {
+                      const matchIndex = localToGlobal(gi, mi, tournamentGroups)
+                      return renderMatchCard(match, matchIndex, `${gi}-${mi}`)
+                    })}
                   </div>
                 </div>
-                <div className="w-24 shrink-0">
-                  <label className={`mb-0.5 block text-xs font-medium ${labelClass}`}>クリスタル 相手</label>
-                  <div className="flex items-center gap-1 rounded-lg border border-zinc-300 dark:border-zinc-600">
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      placeholder="50"
-                      value={match.crystal_opponent.replace(/%/g, '')}
-                      onChange={(e) => {
-                        const half = e.target.value.replace(/[０-９．]/g, (c) =>
-                          c === '．' ? '.' : String.fromCharCode(c.charCodeAt(0) - 0xfee0)
-                        )
-                        const filtered = half.replace(/[^0-9.]/g, '')
-                        const parts = filtered.split('.')
-                        const num = parts.length > 1
-                          ? parts[0] + '.' + parts[1].slice(0, 1)
-                          : parts[0]
-                        updateMatch(matchIndex, 'crystal_opponent', num ? `${num}%` : '')
-                      }}
-                      className="w-full rounded-l-lg border-0 px-2 py-2 text-sm text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100"
-                    />
-                    <span className={`shrink-0 pr-2 text-sm ${labelClass}`}>%</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            )
-          })}
+              ))
+            : matchResults.map((match, matchIndex) => renderMatchCard(match, matchIndex, matchIndex))}
         </div>
-        <div className="mt-3 flex justify-start">
-          <button
-            type="button"
-            onClick={addMatch}
-            className="text-sm text-blue-600 hover:underline dark:text-blue-400"
-          >
-            + 試合を追加
-          </button>
+        <div className="mt-3 flex flex-col gap-2">
+          <div className="flex justify-start">
+            <button
+              type="button"
+              onClick={addMatch}
+              className="text-sm text-blue-600 hover:underline dark:text-blue-400"
+            >
+              + 試合を追加
+            </button>
+          </div>
+          {isTournamentMode && (
+            <div className="flex justify-start">
+              <button
+                type="button"
+                onClick={addOpponentAndMatch}
+                className="text-sm font-medium text-blue-700 hover:underline dark:text-blue-300"
+              >
+                + 対戦相手を追加
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
-      <div>
-        <div className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-          各試合分析
-        </div>
-        <div className="mb-4 space-y-2">
-          {matchResults.map((match, matchIndex) => {
+      {(!isTournamentMode || displayFlatMatches.length > 0) && (
+        <div>
+          <div className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+            各試合分析
+          </div>
+          <div className="mb-4 space-y-2">
+            {displayFlatMatches.map((match, matchIndex) => {
             const isCollapsed = collapsedAnalysisIndices.has(matchIndex)
             const isAnalysisColored = match.result === '勝ち' || match.result === '負け'
             const analysisBoxClass = match.result === '勝ち'
@@ -719,40 +985,43 @@ export default function ReviewForm({ initial }: Props) {
             const analysisChevronClass = isAnalysisColored ? 'text-white/90' : 'text-zinc-400 dark:text-zinc-500'
             const analysisBorderClass = isAnalysisColored ? 'border-white/40' : 'border-zinc-200 dark:border-zinc-700'
             return (
-              <div key={matchIndex} className={analysisBoxClass}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCollapsedAnalysisIndices((prev) => {
-                      const next = new Set(prev)
-                      if (next.has(matchIndex)) next.delete(matchIndex)
-                      else next.add(matchIndex)
-                      return next
-                    })
-                  }}
-                  className={analysisHeaderClass}
-                >
-                  <span>試合 {matchIndex + 1}</span>
-                  <span className={analysisChevronClass} aria-hidden>
-                    {isCollapsed ? '▶' : '▼'}
-                  </span>
-                </button>
-                {!isCollapsed && (
-                  <div className={`border-t ${analysisBorderClass} px-3 py-2`}>
-                    <textarea
-                      value={match.analysis ?? ''}
-                      onChange={(e) => updateMatch(matchIndex, 'analysis', e.target.value)}
-                      placeholder="この試合の分析を入力"
-                      rows={4}
-                      className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-500"
-                    />
-                  </div>
-                )}
+              <div key={matchIndex} className="space-y-2">
+                <div className={analysisBoxClass}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCollapsedAnalysisIndices((prev) => {
+                        const next = new Set(prev)
+                        if (next.has(matchIndex)) next.delete(matchIndex)
+                        else next.add(matchIndex)
+                        return next
+                      })
+                    }}
+                    className={analysisHeaderClass}
+                  >
+                    <span>試合 {matchIndex + 1}</span>
+                    <span className={analysisChevronClass} aria-hidden>
+                      {isCollapsed ? '▶' : '▼'}
+                    </span>
+                  </button>
+                  {!isCollapsed && (
+                    <div className={`border-t ${analysisBorderClass} px-3 py-2`}>
+                      <textarea
+                        value={match.analysis ?? ''}
+                        onChange={(e) => updateMatch(matchIndex, 'analysis', e.target.value)}
+                        placeholder="この試合の分析を入力"
+                        rows={4}
+                        className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+                      />
+                    </div>
+                  )}
+                </div>
               </div>
             )
-          })}
+            })}
+          </div>
         </div>
-      </div>
+      )}
       <div>
         <label htmlFor="content" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
           振り返り
@@ -889,6 +1158,29 @@ export default function ReviewForm({ initial }: Props) {
           </button>
         </div>
       </div>
+
+      {isTournamentMode && (
+        <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-900/80">
+          <label
+            htmlFor="result_summary"
+            className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300"
+          >
+            大会結果
+          </label>
+          <p className="mb-2 text-xs text-zinc-500 dark:text-zinc-400">
+            順位・総合成績など（例: 優勝、3位）
+          </p>
+          <input
+            id="result_summary"
+            type="text"
+            value={resultSummary}
+            onChange={(e) => setResultSummary(e.target.value)}
+            placeholder="例: 準優勝 / 5位タイ など"
+            className="w-full max-w-xl rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+          />
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-3 pt-2">
         <button
           type="submit"
