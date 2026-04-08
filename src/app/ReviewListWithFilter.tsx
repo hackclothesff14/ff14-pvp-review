@@ -20,12 +20,20 @@ export default function ReviewListWithFilter({ reviews, hideToolbar = false }: P
     <>
       {!hideToolbar && (
       <div className="mb-4 flex items-center justify-between">
-        <Link
-          href="/analysis"
-          className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
-        >
-          分析
-        </Link>
+        <div className="flex flex-wrap items-center gap-3">
+          <Link
+            href="/analysis"
+            className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+          >
+            分析
+          </Link>
+          <Link
+            href="/tactics"
+            className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+          >
+            戦術
+          </Link>
+        </div>
         <div className="flex items-center gap-2">
           <label htmlFor="opponent-filter" className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
             対戦相手でフィルタ

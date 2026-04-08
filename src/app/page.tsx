@@ -52,12 +52,20 @@ export default async function Home() {
         {!reviews?.length ? (
           <>
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <Link
-                href="/analysis"
-                className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
-              >
-                分析
-              </Link>
+              <div className="flex flex-wrap items-center gap-3">
+                <Link
+                  href="/analysis"
+                  className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                >
+                  分析
+                </Link>
+                <Link
+                  href="/tactics"
+                  className="inline-block rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                >
+                  戦術
+                </Link>
+              </div>
               <Link
                 href="/reviews/new"
                 className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
