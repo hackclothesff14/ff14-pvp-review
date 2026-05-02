@@ -22,3 +22,8 @@ CREATE POLICY "Allow all for authenticated tactics"
   TO authenticated
   USING (true)
   WITH CHECK (true);
+
+COMMENT ON TABLE public.tactics_documents IS '戦術ページの編集内容。doc_key=main の1ドキュメント運用。';
+COMMENT ON COLUMN public.tactics_documents.doc_key IS 'ドキュメント識別子（現状 main 固定）';
+COMMENT ON COLUMN public.tactics_documents.basic_sections IS '基本戦術セクション配列 JSON';
+COMMENT ON COLUMN public.tactics_documents.map_tactics IS 'マップ別戦術 JSON（key=mapName, value=text）';
