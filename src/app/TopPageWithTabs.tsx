@@ -42,6 +42,12 @@ export default function TopPageWithTabs({ scrimReviews, tournamentReviews }: Pro
           >
             戦術
           </Link>
+          <Link
+            href="/knowledge"
+            className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+          >
+            知識
+          </Link>
           {activeTab === 'scrim' && (
             <div className="flex items-center gap-2">
               <label
