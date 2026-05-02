@@ -10,6 +10,9 @@ export const MEMBERS_LIST = [
   'Nishi Battan',
 ] as const
 
+/** 課題のステータス（課題ページのプルダウン用） */
+export const ISSUE_STATUS_LIST = ['未着手', '進行中', 'レビュー待ち', '完了'] as const
+
 /** ジョブ一覧 */
 export const JOBS_LIST = [
   'ナイト',

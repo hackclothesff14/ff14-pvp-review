@@ -15,3 +15,16 @@ export type Review = {
 }
 
 export type ReviewInput = Omit<Review, 'id' | 'created_at'>
+
+/** 課題ページ（issue_items） */
+export type IssueItem = {
+  id: string
+  title: string
+  body: string
+  status: string
+  progress: number
+  /** 進捗の状況（自由記述） */
+  progress_note: string
+  created_at: string
+  updated_at: string
+}
