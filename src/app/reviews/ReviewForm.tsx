@@ -468,12 +468,12 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
     return (
       <div
         key={cardKey}
-        className={`rounded-lg border p-4 ${
+        className={`rounded-lg border p-4 backdrop-blur-sm ${
           match.result === '勝ち'
-            ? 'border-[#8a4526] bg-[#a0522d] dark:border-[#6d3820] dark:bg-[#a0522d]'
+            ? 'border-[#8a4526]/90 bg-[#a0522d]/82 dark:border-[#6d3820]/90 dark:bg-[#a0522d]/82'
             : match.result === '負け'
-              ? 'border-[#3a6d99] bg-[#4682b4] dark:border-[#3a6d99] dark:bg-[#4682b4]'
-              : 'border-zinc-200 bg-white dark:border-zinc-600 dark:bg-zinc-900'
+              ? 'border-[#3a6d99]/90 bg-[#4682b4]/82 dark:border-[#3a6d99]/90 dark:bg-[#4682b4]/82'
+              : 'border-zinc-200/90 bg-white/72 dark:border-zinc-600/90 dark:bg-zinc-900/68'
         }`}
       >
         <div className="mb-3 flex items-center justify-between">
@@ -512,7 +512,7 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
                       {selectValue === CUSTOM_MEMBER_VALUE ? (
                         <div
                           ref={memberDropdownOpen?.match === matchIndex && memberDropdownOpen?.pair === pairIndex ? memberDropdownRef : undefined}
-                          className="relative flex min-w-0 flex-1 basis-0 items-center rounded-lg border border-zinc-300 bg-white dark:border-zinc-600 dark:bg-zinc-800"
+                          className="relative flex min-w-0 flex-1 basis-0 items-center rounded-lg border border-zinc-300/90 bg-white/65 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-900/50"
                         >
                           <input
                             type="text"
@@ -531,7 +531,7 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
                             <span className="text-xs" aria-hidden>▼</span>
                           </button>
                           {memberDropdownOpen?.match === matchIndex && memberDropdownOpen?.pair === pairIndex && (
-                            <ul className="absolute left-0 right-0 top-full z-10 mt-0.5 max-h-48 overflow-auto rounded-lg border border-zinc-300 bg-white py-1 shadow-lg dark:border-zinc-600 dark:bg-zinc-800">
+                            <ul className="absolute left-0 right-0 top-full z-10 mt-0.5 max-h-48 overflow-auto rounded-lg border border-zinc-300/90 bg-white/92 py-1 shadow-lg backdrop-blur-md dark:border-zinc-600/90 dark:bg-zinc-900/90">
                               <li>
                                 <button
                                   type="button"
@@ -571,7 +571,7 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
                             const v = e.target.value
                             updateMatchPair(matchIndex, pairIndex, 'member', v === CUSTOM_MEMBER_VALUE ? ' ' : v)
                           }}
-                          className="w-full rounded-lg border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                          className="w-full rounded-lg border border-zinc-300/90 bg-white/55 px-2 py-1.5 text-sm text-zinc-900 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-800/45 dark:text-zinc-100"
                           aria-label={`試合${matchIndex + 1} ${pairIndex + 1}行目: メンバー`}
                         >
                           <option value="">選択してください</option>
@@ -586,7 +586,7 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
                       <select
                         value={pair.job}
                         onChange={(e) => updateMatchPair(matchIndex, pairIndex, 'job', e.target.value)}
-                        className={`w-full rounded-lg border px-2 py-1.5 text-sm ${pair.job ? 'pl-8' : ''} ${getJobCategoryClass(pair.job) || 'border-zinc-300 text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100'}`}
+                        className={`w-full rounded-lg border px-2 py-1.5 text-sm ${pair.job ? 'pl-8' : ''} ${getJobCategoryClass(pair.job) || 'border-zinc-300/90 bg-white/55 text-zinc-900 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-800/45 dark:text-zinc-100'}`}
                         aria-label={`試合${matchIndex + 1} ${pairIndex + 1}行目: ジョブ`}
                         style={pair.job ? { backgroundImage: `url(${getJobIconPath(pair.job)})`, backgroundRepeat: 'no-repeat', backgroundPosition: '6px center', backgroundSize: '20px 20px' } : undefined}
                       >
@@ -612,7 +612,7 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
                     <select
                       value={job}
                       onChange={(e) => updateMatchOpponentJob(matchIndex, slotIndex, e.target.value)}
-                      className={`w-full rounded-lg border px-2 py-1.5 text-sm ${job ? 'pl-8' : ''} ${getJobCategoryClass(job) || 'border-zinc-300 text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100'}`}
+                      className={`w-full rounded-lg border px-2 py-1.5 text-sm ${job ? 'pl-8' : ''} ${getJobCategoryClass(job) || 'border-zinc-300/90 bg-white/55 text-zinc-900 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-800/45 dark:text-zinc-100'}`}
                       aria-label={`相手${slotIndex + 1}人目 ジョブ`}
                       style={job ? { backgroundImage: `url(${getJobIconPath(job)})`, backgroundRepeat: 'no-repeat', backgroundPosition: '6px center', backgroundSize: '20px 20px' } : undefined}
                     >
@@ -633,7 +633,7 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
           <select
             value={match.map}
             onChange={(e) => updateMatch(matchIndex, 'map', e.target.value)}
-            className="w-full max-w-xs rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+            className="w-full max-w-xs rounded-lg border border-zinc-300/90 bg-white/55 px-3 py-2 text-sm text-zinc-900 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-800/45 dark:text-zinc-100"
           >
             <option value="">選択してください</option>
             {MAPS_LIST.map((m) => (
@@ -648,7 +648,7 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
             <select
               value={match.result}
               onChange={(e) => updateMatch(matchIndex, 'result', e.target.value)}
-              className="w-full rounded-lg border border-zinc-300 px-2 py-2 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+              className="w-full rounded-lg border border-zinc-300/90 bg-white/55 px-2 py-2 text-sm text-zinc-900 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-800/45 dark:text-zinc-100"
             >
               <option value="">選択</option>
               {RESULT_LIST.map((r) => (
@@ -661,7 +661,7 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
             <select
               value={match.ot_situation}
               onChange={(e) => updateMatch(matchIndex, 'ot_situation', e.target.value)}
-              className="w-full rounded-lg border border-zinc-300 px-2 py-2 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+              className="w-full rounded-lg border border-zinc-300/90 bg-white/55 px-2 py-2 text-sm text-zinc-900 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-800/45 dark:text-zinc-100"
             >
               <option value="">選択</option>
               {OT_SITUATION_LIST.map((o) => (
@@ -678,7 +678,7 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
                 placeholder="分"
                 value={match.end_minutes}
                 onChange={(e) => updateMatch(matchIndex, 'end_minutes', e.target.value)}
-                className="w-14 rounded-lg border border-zinc-300 px-2 py-2 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                className="w-14 rounded-lg border border-zinc-300/90 bg-white/55 px-2 py-2 text-sm text-zinc-900 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-800/45 dark:text-zinc-100"
               />
             </div>
             <div>
@@ -689,7 +689,7 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
                 placeholder="秒"
                 value={match.end_seconds}
                 onChange={(e) => updateMatch(matchIndex, 'end_seconds', e.target.value)}
-                className="w-14 rounded-lg border border-zinc-300 px-2 py-2 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                className="w-14 rounded-lg border border-zinc-300/90 bg-white/55 px-2 py-2 text-sm text-zinc-900 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-800/45 dark:text-zinc-100"
               />
             </div>
             <label className="flex items-center gap-1.5 pb-2">
@@ -697,7 +697,7 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
                 type="checkbox"
                 checked={match.is_ot}
                 onChange={(e) => updateMatch(matchIndex, 'is_ot', e.target.checked)}
-                className="rounded border-zinc-300 text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800"
+                className="rounded border-zinc-300/90 bg-white/50 text-zinc-900 dark:border-zinc-600/90 dark:bg-zinc-900/40"
               />
               <span className={`text-sm ${mutedClass}`}>OT</span>
             </label>
@@ -707,7 +707,7 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
         <div className="flex flex-wrap items-end gap-3">
           <div className="w-24 shrink-0">
             <label className={`mb-0.5 block text-xs font-medium ${labelClass}`}>クリスタル 自</label>
-            <div className="flex items-center gap-1 rounded-lg border border-zinc-300 dark:border-zinc-600">
+            <div className="flex items-center gap-1 rounded-lg border border-zinc-300/90 bg-white/50 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-900/40">
               <input
                 type="text"
                 inputMode="decimal"
@@ -724,14 +724,14 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
                     : parts[0]
                   updateMatch(matchIndex, 'crystal_self', num ? `${num}%` : '')
                 }}
-                className="w-full rounded-l-lg border-0 px-2 py-2 text-sm text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100"
+                className="w-full rounded-l-lg border-0 bg-transparent px-2 py-2 text-sm text-zinc-900 dark:text-zinc-100"
               />
               <span className={`shrink-0 pr-2 text-sm ${labelClass}`}>%</span>
             </div>
           </div>
           <div className="w-24 shrink-0">
             <label className={`mb-0.5 block text-xs font-medium ${labelClass}`}>クリスタル 相手</label>
-            <div className="flex items-center gap-1 rounded-lg border border-zinc-300 dark:border-zinc-600">
+            <div className="flex items-center gap-1 rounded-lg border border-zinc-300/90 bg-white/50 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-900/40">
               <input
                 type="text"
                 inputMode="decimal"
@@ -748,7 +748,7 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
                     : parts[0]
                   updateMatch(matchIndex, 'crystal_opponent', num ? `${num}%` : '')
                 }}
-                className="w-full rounded-l-lg border-0 px-2 py-2 text-sm text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100"
+                className="w-full rounded-l-lg border-0 bg-transparent px-2 py-2 text-sm text-zinc-900 dark:text-zinc-100"
               />
               <span className={`shrink-0 pr-2 text-sm ${labelClass}`}>%</span>
             </div>
@@ -791,11 +791,11 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
         <label htmlFor="review_date" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
           日付
         </label>
-        <div className="flex items-stretch rounded-lg border border-zinc-300 dark:border-zinc-600">
+        <div className="flex items-stretch rounded-lg border border-zinc-300/90 dark:border-zinc-600/90">
           <button
             type="button"
             onClick={() => (document.getElementById('review_date') as HTMLInputElement)?.showPicker?.()}
-            className="flex shrink-0 items-center justify-center rounded-l-lg border-r border-zinc-300 bg-zinc-100 px-3 dark:border-zinc-600 dark:bg-zinc-800"
+            className="flex shrink-0 items-center justify-center rounded-l-lg border-r border-zinc-300/90 bg-zinc-100/80 px-3 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-800/50"
             aria-label="カレンダーを開く"
             title="カレンダーを開く"
           >
@@ -812,7 +812,7 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
             required
             value={form.review_date}
             onChange={(e) => setForm((f) => ({ ...f, review_date: e.target.value }))}
-            className="min-w-0 flex-1 rounded-r-lg border-0 px-3 py-2 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100"
+            className="min-w-0 flex-1 rounded-r-lg border-0 bg-white/55 px-3 py-2 text-zinc-900 backdrop-blur-sm dark:bg-zinc-900/45 dark:text-zinc-100"
           />
         </div>
       </div>
@@ -827,7 +827,7 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
             type="text"
             value={form.opponent}
             onChange={(e) => setForm((f) => ({ ...f, opponent: e.target.value }))}
-            className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+            className="w-full rounded-lg border border-zinc-300/90 bg-white/65 px-3 py-2 text-zinc-900 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-800/50 dark:text-zinc-100"
             placeholder="例: 〇〇大会"
             required
           />
@@ -843,7 +843,7 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
               type="text"
               value={form.opponent}
               onChange={(e) => setForm((f) => ({ ...f, opponent: e.target.value }))}
-              className="min-w-0 flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+              className="min-w-0 flex-1 rounded-lg border border-zinc-300/90 bg-white/65 px-3 py-2 text-zinc-900 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-800/50 dark:text-zinc-100"
               placeholder="例: 〇〇チーム"
             />
             <button
@@ -871,7 +871,7 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
             </button>
           </div>
           {showOpponentList && (
-            <ul className="absolute left-0 right-0 top-full z-10 mt-1 max-h-48 overflow-auto rounded-lg border border-zinc-300 bg-white py-1 shadow-lg dark:border-zinc-600 dark:bg-zinc-800">
+            <ul className="absolute left-0 right-0 top-full z-10 mt-1 max-h-48 overflow-auto rounded-lg border border-zinc-300/90 bg-white/92 py-1 shadow-lg backdrop-blur-md dark:border-zinc-600/90 dark:bg-zinc-900/90">
               {pastOpponents.length === 0 ? (
                 <li className="px-3 py-2 text-sm text-zinc-500 dark:text-zinc-400">対戦歴がありません</li>
               ) : (
@@ -905,14 +905,14 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
           className={
             isTournamentMode
               ? 'space-y-6'
-              : 'space-y-4 rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800'
+              : 'space-y-4 rounded-lg border border-zinc-200/90 bg-zinc-50/70 p-3 backdrop-blur-sm dark:border-zinc-700/90 dark:bg-zinc-800/55'
           }
         >
           {isTournamentMode
             ? tournamentGroups.map((group, gi) => (
                 <div
                   key={gi}
-                  className="rounded-xl border-2 border-zinc-300 bg-zinc-50 p-4 shadow-sm dark:border-zinc-600 dark:bg-zinc-900/90 dark:shadow-none"
+                  className="rounded-xl border-2 border-zinc-300/90 bg-zinc-50/75 p-4 shadow-sm backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-900/65 dark:shadow-none"
                 >
                   <div className="mb-4 border-b border-zinc-200 pb-4 dark:border-zinc-700">
                     <label
@@ -927,7 +927,7 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
                       value={group.opponent_name}
                       onChange={(e) => updateGroupOpponent(gi, e.target.value)}
                       placeholder="例: 〇〇チーム"
-                      className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                      className="w-full rounded-lg border border-zinc-300/90 bg-white/70 px-3 py-2 text-sm text-zinc-900 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-800/50 dark:text-zinc-100"
                       aria-label={`対戦相手 ${gi + 1}`}
                     />
                   </div>
@@ -975,13 +975,13 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
             const isCollapsed = collapsedAnalysisIndices.has(matchIndex)
             const isAnalysisColored = match.result === '勝ち' || match.result === '負け'
             const analysisBoxClass = match.result === '勝ち'
-              ? 'overflow-hidden rounded-lg border border-[#8a4526] bg-[#a0522d] dark:border-[#6d3820] dark:bg-[#a0522d]'
+              ? 'overflow-hidden rounded-lg border border-[#8a4526]/90 bg-[#a0522d]/82 backdrop-blur-sm dark:border-[#6d3820]/90 dark:bg-[#a0522d]/82'
               : match.result === '負け'
-                ? 'overflow-hidden rounded-lg border border-[#3a6d99] bg-[#4682b4] dark:border-[#3a6d99] dark:bg-[#4682b4]'
-                : 'overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-600 dark:bg-zinc-900'
+                ? 'overflow-hidden rounded-lg border border-[#3a6d99]/90 bg-[#4682b4]/82 backdrop-blur-sm dark:border-[#3a6d99]/90 dark:bg-[#4682b4]/82'
+                : 'overflow-hidden rounded-lg border border-zinc-200/90 bg-white/72 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-900/68'
             const analysisHeaderClass = isAnalysisColored
-              ? 'flex w-full items-center justify-between px-3 py-2.5 text-left text-sm font-medium text-white hover:opacity-90'
-              : 'flex w-full items-center justify-between px-3 py-2.5 text-left text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800'
+              ? 'flex w-full items-center justify-between px-3 py-2.5 text-left text-sm font-medium text-white hover:bg-black/10'
+              : 'flex w-full items-center justify-between px-3 py-2.5 text-left text-sm font-medium text-zinc-700 hover:bg-zinc-500/10 dark:text-zinc-300 dark:hover:bg-white/10'
             const analysisChevronClass = isAnalysisColored ? 'text-white/90' : 'text-zinc-400 dark:text-zinc-500'
             const analysisBorderClass = isAnalysisColored ? 'border-white/40' : 'border-zinc-200 dark:border-zinc-700'
             return (
@@ -1011,7 +1011,7 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
                         onChange={(e) => updateMatch(matchIndex, 'analysis', e.target.value)}
                         placeholder="この試合の分析を入力"
                         rows={4}
-                        className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+                        className="w-full rounded-lg border border-zinc-300/90 bg-white/60 px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-900/45 dark:text-zinc-100 dark:placeholder:text-zinc-500"
                       />
                     </div>
                   )}
@@ -1026,7 +1026,7 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
         <label htmlFor="content" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
           振り返り
         </label>
-        <div className="flex flex-wrap gap-1 rounded-t-lg border border-b-0 border-zinc-300 bg-zinc-100 p-1 dark:border-zinc-600 dark:bg-zinc-800/50">
+        <div className="flex flex-wrap gap-1 rounded-t-lg border border-b-0 border-zinc-300/90 bg-zinc-100/75 p-1 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-800/45">
           <button
             type="button"
             onClick={() => execContentCommand('bold')}
@@ -1063,7 +1063,7 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
           onSelect={updateContentFormatState}
           onKeyUp={updateContentFormatState}
           onMouseUp={updateContentFormatState}
-          className="min-h-[100px] w-full rounded-b-lg rounded-t-none border border-zinc-300 px-3 py-2 text-zinc-900 empty:before:content-[attr(data-placeholder)] empty:before:text-zinc-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:empty:before:text-zinc-500"
+          className="min-h-[100px] w-full rounded-b-lg rounded-t-none border border-zinc-300/90 bg-white/60 px-3 py-2 text-zinc-900 backdrop-blur-sm empty:before:content-[attr(data-placeholder)] empty:before:text-zinc-400 dark:border-zinc-600/90 dark:bg-zinc-900/45 dark:text-zinc-100 dark:empty:before:text-zinc-500"
           style={{ outline: 'none' }}
         />
       </div>
@@ -1105,7 +1105,7 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
                       setVideos((v) => v.map((x, i) => (i === index ? { ...x, url: e.target.value } : x)))
                     }
                     onBlur={() => setEditingVideoUrlIndex(null)}
-                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                    className="w-full rounded-lg border border-zinc-300/90 bg-white/55 px-3 py-2 text-sm text-zinc-900 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-800/45 dark:text-zinc-100"
                     placeholder="https://..."
                   />
                 )}
@@ -1117,7 +1117,7 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
                   onChange={(e) =>
                     setVideos((v) => v.map((x, i) => (i === index ? { ...x, viewpoint: e.target.value } : x)))
                   }
-                  className="w-full rounded-lg border border-zinc-300 px-2 py-2 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                  className="w-full rounded-lg border border-zinc-300/90 bg-white/55 px-2 py-2 text-sm text-zinc-900 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-800/45 dark:text-zinc-100"
                 >
                   <option value="">選択</option>
                   {video.viewpoint && !MEMBERS_LIST.includes(video.viewpoint as (typeof MEMBERS_LIST)[number]) && (
@@ -1136,7 +1136,7 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
                   onChange={(e) =>
                     setVideos((v) => v.map((x, i) => (i === index ? { ...x, title: e.target.value } : x)))
                   }
-                  className="w-full rounded-lg border border-zinc-300 px-2 py-2 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                  className="w-full rounded-lg border border-zinc-300/90 bg-white/55 px-2 py-2 text-sm text-zinc-900 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-800/45 dark:text-zinc-100"
                   placeholder="動画のタイトル"
                 />
               </div>
@@ -1160,7 +1160,7 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
       </div>
 
       {isTournamentMode && (
-        <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-900/80">
+        <div className="rounded-lg border border-zinc-200/90 bg-zinc-50/75 p-4 backdrop-blur-sm dark:border-zinc-700/90 dark:bg-zinc-900/60">
           <label
             htmlFor="result_summary"
             className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300"
@@ -1176,7 +1176,7 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
             value={resultSummary}
             onChange={(e) => setResultSummary(e.target.value)}
             placeholder="例: 準優勝 / 5位タイ など"
-            className="w-full max-w-xl rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+            className="w-full max-w-xl rounded-lg border border-zinc-300/90 bg-white/70 px-3 py-2 text-sm text-zinc-900 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-800/50 dark:text-zinc-100"
           />
         </div>
       )}

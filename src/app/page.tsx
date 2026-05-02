@@ -18,11 +18,11 @@ export default async function Home() {
     return (
       <div className="relative min-h-screen px-4 py-8">
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+          className="fixed inset-0 z-0 bg-cover bg-center bg-no-repeat"
           style={{ backgroundImage: "url('/top-bg.jpg')" }}
           aria-hidden
         />
-        <div className="absolute inset-0 bg-zinc-50/75 dark:bg-zinc-950/80" aria-hidden />
+        <div className="fixed inset-0 z-0 bg-zinc-50/75 dark:bg-zinc-950/80" aria-hidden />
         <div className="relative z-10">
           <p className="text-red-600 dark:text-red-400">読み込みに失敗しました: {error.message}</p>
         </div>
@@ -37,11 +37,11 @@ export default async function Home() {
     <div className="relative min-h-screen px-4 py-8">
       {/* 背景画像（主張しすぎないよう薄く） */}
       <div
-        className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+        className="fixed inset-0 z-0 bg-cover bg-center bg-no-repeat"
         style={{ backgroundImage: "url('/top-bg.jpg')" }}
         aria-hidden
       />
-      <div className="absolute inset-0 bg-zinc-50/75 dark:bg-zinc-950/80" aria-hidden />
+      <div className="fixed inset-0 z-0 bg-zinc-50/75 dark:bg-zinc-950/80" aria-hidden />
       <div className="relative z-10 mx-auto max-w-4xl">
         <div className="mb-6">
           <h1 className="font-title text-3xl font-semibold tracking-wide text-zinc-900 dark:text-zinc-100">
@@ -52,12 +52,20 @@ export default async function Home() {
         {!reviews?.length ? (
           <>
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <Link
-                href="/analysis"
-                className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
-              >
-                分析
-              </Link>
+              <div className="flex flex-wrap items-center gap-3">
+                <Link
+                  href="/analysis"
+                  className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                >
+                  分析
+                </Link>
+                <Link
+                  href="/tactics"
+                  className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                >
+                  戦術
+                </Link>
+              </div>
               <Link
                 href="/reviews/new"
                 className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"

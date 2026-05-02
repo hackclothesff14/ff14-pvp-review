@@ -83,12 +83,45 @@ COMMENT ON COLUMN public.reviews.matches IS '試合結果の配列 JSON';
 
 ---
 
+## 4. 戦術ページ保存用テーブル（tactics_documents）
+
+戦術ページの内容を保存するため、次の SQL を実行してください（**``` は含めず**にコピーして Run）。
+
+```sql
+CREATE TABLE IF NOT EXISTS public.tactics_documents (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  doc_key text NOT NULL UNIQUE,
+  basic_sections jsonb NOT NULL DEFAULT '[]'::jsonb,
+  map_tactics jsonb NOT NULL DEFAULT '{}'::jsonb,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.tactics_documents ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow all for anon tactics"
+  ON public.tactics_documents
+  FOR ALL
+  TO anon
+  USING (true)
+  WITH CHECK (true);
+
+CREATE POLICY "Allow all for authenticated tactics"
+  ON public.tactics_documents
+  FOR ALL
+  TO authenticated
+  USING (true)
+  WITH CHECK (true);
+```
+
+---
+
 ## テーブル一覧
 
 | テーブル          | 用途 |
 |-------------------|------|
 | **allowed_emails** | ログインを許可するメールアドレス（認証制限を有効にするときに使用） |
 | **reviews**        | 反省会の記録（日付・対戦相手・メンバー・ジョブ・反省内容・動画URL） |
+| **tactics_documents** | 戦術ページの保存データ（基本戦術・マップ別戦術） |
 
 ### reviews のカラム
 
