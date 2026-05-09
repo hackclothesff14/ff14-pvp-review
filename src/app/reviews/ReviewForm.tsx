@@ -185,14 +185,6 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
   const removeMatch = (index: number) => {
     if (!isTournamentMode) {
       setMatchResults((m) => m.filter((_, i) => i !== index))
-      setCollapsedAnalysisIndices((prev) => {
-        const next = new Set<number>()
-        prev.forEach((i) => {
-          if (i < index) next.add(i)
-          else if (i > index) next.add(i - 1)
-        })
-        return next
-      })
       return
     }
     setTournamentGroups((gs) => {
@@ -202,14 +194,6 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
       next[loc.gi].matches.splice(loc.mi, 1)
       if (next[loc.gi].matches.length === 0) next.splice(loc.gi, 1)
       if (next.length === 0) return [{ opponent_name: '', matches: [getDefaultMatch()] }]
-      return next
-    })
-    setCollapsedAnalysisIndices((prev) => {
-      const next = new Set<number>()
-      prev.forEach((i) => {
-        if (i < index) next.add(i)
-        else if (i > index) next.add(i - 1)
-      })
       return next
     })
   }
