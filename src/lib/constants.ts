@@ -107,13 +107,23 @@ export const RESULT_LIST = ['勝ち', '負け', '引き分け'] as const
 /** OTへの突入時状況 */
 export const OT_SITUATION_LIST = ['勝ちOT', '負けOT', 'OT突入なし'] as const
 
+/** クリスタル状況：OT前50%（自／相手）の選択肢（旧％入力は別形式のため未選択で表示される） */
+export const CRYSTAL_PRE_OT_HALF_LIST = ['乗せた', '乗せてない', '割れた'] as const
+
+/** `crystal_self` / `crystal_opponent` が現行選択肢か */
+export function isCrystalPreOtHalfValue(v: string): boolean {
+  return (CRYSTAL_PRE_OT_HALF_LIST as readonly string[]).includes(v)
+}
+
 export type MemberJobPair = { member: string; job: string }
 
 /** 試合1件の結果（メンバー・ジョブは試合ごと） */
 export type MatchResult = {
   map: string
   result: string
+  /** OT前50%の状況（自）。`CRYSTAL_PRE_OT_HALF_LIST` のいずれか、または旧形式の「％」文字列・空 */
   crystal_self: string
+  /** OT前50%の状況（相手） */
   crystal_opponent: string
   ot_situation: string
   end_minutes: string

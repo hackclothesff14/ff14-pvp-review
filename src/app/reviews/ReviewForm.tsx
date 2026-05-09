@@ -12,6 +12,8 @@ import {
   MAPS_LIST,
   RESULT_LIST,
   OT_SITUATION_LIST,
+  CRYSTAL_PRE_OT_HALF_LIST,
+  isCrystalPreOtHalfValue,
   parseMatchResults,
   serializeMatchResults,
   getDefaultMatch,
@@ -295,8 +297,6 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
   const [pastOpponents, setPastOpponents] = useState<string[]>([])
   const [showOpponentList, setShowOpponentList] = useState(false)
   const [editingVideoUrlIndex, setEditingVideoUrlIndex] = useState<number | null>(null)
-  const [collapsedAnalysisIndices, setCollapsedAnalysisIndices] = useState<Set<number>>(new Set())
-
   useLayoutEffect(() => {
     if (!contentRef.current) return
     contentRef.current.innerHTML = contentToHtml(initial?.content ?? form.content)
@@ -628,130 +628,137 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
           </div>
         </div>
 
-        <div className="mb-3">
-          <label className={`mb-0.5 block text-xs font-medium ${labelClass}`}>マップ</label>
-          <select
-            value={match.map}
-            onChange={(e) => updateMatch(matchIndex, 'map', e.target.value)}
-            className="w-full max-w-xs rounded-lg border border-zinc-300/90 bg-white/55 px-3 py-2 text-sm text-zinc-900 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-800/45 dark:text-zinc-100"
-          >
-            <option value="">選択してください</option>
-            {MAPS_LIST.map((m) => (
-              <option key={m} value={m}>{m}</option>
-            ))}
-          </select>
-        </div>
+        <div className="mb-3 flex flex-col gap-4 lg:flex-row lg:items-stretch lg:gap-4">
+          <div className="min-w-0 flex-1 space-y-3">
+            <div>
+              <label className={`mb-0.5 block text-xs font-medium ${labelClass}`}>マップ</label>
+              <select
+                value={match.map}
+                onChange={(e) => updateMatch(matchIndex, 'map', e.target.value)}
+                className="w-full max-w-xs rounded-lg border border-zinc-300/90 bg-white/55 px-3 py-2 text-sm text-zinc-900 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-800/45 dark:text-zinc-100"
+              >
+                <option value="">選択してください</option>
+                {MAPS_LIST.map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            </div>
 
-        <div className="mb-3 flex flex-wrap items-end gap-3">
-          <div className="w-24 shrink-0">
-            <label className={`mb-0.5 block text-xs font-medium ${labelClass}`}>勝ち負け</label>
-            <select
-              value={match.result}
-              onChange={(e) => updateMatch(matchIndex, 'result', e.target.value)}
-              className="w-full rounded-lg border border-zinc-300/90 bg-white/55 px-2 py-2 text-sm text-zinc-900 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-800/45 dark:text-zinc-100"
-            >
-              <option value="">選択</option>
-              {RESULT_LIST.map((r) => (
-                <option key={r} value={r}>{r}</option>
-              ))}
-            </select>
-          </div>
-          <div className="w-28 shrink-0">
-            <label className={`mb-0.5 block text-xs font-medium ${labelClass}`}>OT突入時状況</label>
-            <select
-              value={match.ot_situation}
-              onChange={(e) => updateMatch(matchIndex, 'ot_situation', e.target.value)}
-              className="w-full rounded-lg border border-zinc-300/90 bg-white/55 px-2 py-2 text-sm text-zinc-900 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-800/45 dark:text-zinc-100"
-            >
-              <option value="">選択</option>
-              {OT_SITUATION_LIST.map((o) => (
-                <option key={o} value={o}>{o}</option>
-              ))}
-            </select>
-          </div>
-          <div className="flex items-end gap-2">
-            <div>
-              <label className={`mb-0.5 block text-xs font-medium ${labelClass}`}>残り 分</label>
-              <input
-                type="text"
-                inputMode="numeric"
-                placeholder="分"
-                value={match.end_minutes}
-                onChange={(e) => updateMatch(matchIndex, 'end_minutes', e.target.value)}
-                className="w-14 rounded-lg border border-zinc-300/90 bg-white/55 px-2 py-2 text-sm text-zinc-900 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-800/45 dark:text-zinc-100"
-              />
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="w-24 shrink-0">
+                <label className={`mb-0.5 block text-xs font-medium ${labelClass}`}>勝ち負け</label>
+                <select
+                  value={match.result}
+                  onChange={(e) => updateMatch(matchIndex, 'result', e.target.value)}
+                  className="w-full rounded-lg border border-zinc-300/90 bg-white/55 px-2 py-2 text-sm text-zinc-900 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-800/45 dark:text-zinc-100"
+                >
+                  <option value="">選択</option>
+                  {RESULT_LIST.map((r) => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="w-28 shrink-0">
+                <label className={`mb-0.5 block text-xs font-medium ${labelClass}`}>OT突入時状況</label>
+                <select
+                  value={match.ot_situation}
+                  onChange={(e) => updateMatch(matchIndex, 'ot_situation', e.target.value)}
+                  className="w-full rounded-lg border border-zinc-300/90 bg-white/55 px-2 py-2 text-sm text-zinc-900 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-800/45 dark:text-zinc-100"
+                >
+                  <option value="">選択</option>
+                  {OT_SITUATION_LIST.map((o) => (
+                    <option key={o} value={o}>{o}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-end gap-2">
+                <div>
+                  <label className={`mb-0.5 block text-xs font-medium ${labelClass}`}>残り 分</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="分"
+                    value={match.end_minutes}
+                    onChange={(e) => updateMatch(matchIndex, 'end_minutes', e.target.value)}
+                    className="w-14 rounded-lg border border-zinc-300/90 bg-white/55 px-2 py-2 text-sm text-zinc-900 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-800/45 dark:text-zinc-100"
+                  />
+                </div>
+                <div>
+                  <label className={`mb-0.5 block text-xs font-medium ${labelClass}`}>秒</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="秒"
+                    value={match.end_seconds}
+                    onChange={(e) => updateMatch(matchIndex, 'end_seconds', e.target.value)}
+                    className="w-14 rounded-lg border border-zinc-300/90 bg-white/55 px-2 py-2 text-sm text-zinc-900 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-800/45 dark:text-zinc-100"
+                  />
+                </div>
+                <label className="flex items-center gap-1.5 pb-2">
+                  <input
+                    type="checkbox"
+                    checked={match.is_ot}
+                    onChange={(e) => updateMatch(matchIndex, 'is_ot', e.target.checked)}
+                    className="rounded border-zinc-300/90 bg-white/50 text-zinc-900 dark:border-zinc-600/90 dark:bg-zinc-900/40"
+                  />
+                  <span className={`text-sm ${mutedClass}`}>OT</span>
+                </label>
+              </div>
             </div>
-            <div>
-              <label className={`mb-0.5 block text-xs font-medium ${labelClass}`}>秒</label>
-              <input
-                type="text"
-                inputMode="numeric"
-                placeholder="秒"
-                value={match.end_seconds}
-                onChange={(e) => updateMatch(matchIndex, 'end_seconds', e.target.value)}
-                className="w-14 rounded-lg border border-zinc-300/90 bg-white/55 px-2 py-2 text-sm text-zinc-900 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-800/45 dark:text-zinc-100"
-              />
+
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="w-[12rem] shrink-0 max-w-full sm:w-[13rem]">
+                <label className={`mb-0.5 block text-xs font-medium leading-snug ${labelClass}`}>
+                  クリスタル状況：OT前50%（自）
+                </label>
+                <select
+                  value={isCrystalPreOtHalfValue(match.crystal_self) ? match.crystal_self : ''}
+                  onChange={(e) => updateMatch(matchIndex, 'crystal_self', e.target.value)}
+                  className="w-full rounded-lg border border-zinc-300/90 bg-white/55 px-2 py-2 text-sm text-zinc-900 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-800/45 dark:text-zinc-100"
+                >
+                  <option value="">選択</option>
+                  {CRYSTAL_PRE_OT_HALF_LIST.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="w-[12rem] shrink-0 max-w-full sm:w-[13rem]">
+                <label className={`mb-0.5 block text-xs font-medium leading-snug ${labelClass}`}>
+                  クリスタル状況：OT前50%（相手）
+                </label>
+                <select
+                  value={isCrystalPreOtHalfValue(match.crystal_opponent) ? match.crystal_opponent : ''}
+                  onChange={(e) => updateMatch(matchIndex, 'crystal_opponent', e.target.value)}
+                  className="w-full rounded-lg border border-zinc-300/90 bg-white/55 px-2 py-2 text-sm text-zinc-900 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-800/45 dark:text-zinc-100"
+                >
+                  <option value="">選択</option>
+                  {CRYSTAL_PRE_OT_HALF_LIST.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
-            <label className="flex items-center gap-1.5 pb-2">
-              <input
-                type="checkbox"
-                checked={match.is_ot}
-                onChange={(e) => updateMatch(matchIndex, 'is_ot', e.target.checked)}
-                className="rounded border-zinc-300/90 bg-white/50 text-zinc-900 dark:border-zinc-600/90 dark:bg-zinc-900/40"
-              />
-              <span className={`text-sm ${mutedClass}`}>OT</span>
+          </div>
+
+          <div className="flex min-h-0 min-w-0 w-full flex-1 flex-col">
+            <label
+              htmlFor={`match-analysis-${cardKey}`}
+              className={`mb-1.5 shrink-0 block text-xs font-medium ${labelClass}`}
+            >
+              各試合分析
             </label>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="w-24 shrink-0">
-            <label className={`mb-0.5 block text-xs font-medium ${labelClass}`}>クリスタル 自</label>
-            <div className="flex items-center gap-1 rounded-lg border border-zinc-300/90 bg-white/50 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-900/40">
-              <input
-                type="text"
-                inputMode="decimal"
-                placeholder="50"
-                value={match.crystal_self.replace(/%/g, '')}
-                onChange={(e) => {
-                  const half = e.target.value.replace(/[０-９．]/g, (c) =>
-                    c === '．' ? '.' : String.fromCharCode(c.charCodeAt(0) - 0xfee0)
-                  )
-                  const filtered = half.replace(/[^0-9.]/g, '')
-                  const parts = filtered.split('.')
-                  const num = parts.length > 1
-                    ? parts[0] + '.' + parts[1].slice(0, 1)
-                    : parts[0]
-                  updateMatch(matchIndex, 'crystal_self', num ? `${num}%` : '')
-                }}
-                className="w-full rounded-l-lg border-0 bg-transparent px-2 py-2 text-sm text-zinc-900 dark:text-zinc-100"
-              />
-              <span className={`shrink-0 pr-2 text-sm ${labelClass}`}>%</span>
-            </div>
-          </div>
-          <div className="w-24 shrink-0">
-            <label className={`mb-0.5 block text-xs font-medium ${labelClass}`}>クリスタル 相手</label>
-            <div className="flex items-center gap-1 rounded-lg border border-zinc-300/90 bg-white/50 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-900/40">
-              <input
-                type="text"
-                inputMode="decimal"
-                placeholder="50"
-                value={match.crystal_opponent.replace(/%/g, '')}
-                onChange={(e) => {
-                  const half = e.target.value.replace(/[０-９．]/g, (c) =>
-                    c === '．' ? '.' : String.fromCharCode(c.charCodeAt(0) - 0xfee0)
-                  )
-                  const filtered = half.replace(/[^0-9.]/g, '')
-                  const parts = filtered.split('.')
-                  const num = parts.length > 1
-                    ? parts[0] + '.' + parts[1].slice(0, 1)
-                    : parts[0]
-                  updateMatch(matchIndex, 'crystal_opponent', num ? `${num}%` : '')
-                }}
-                className="w-full rounded-l-lg border-0 bg-transparent px-2 py-2 text-sm text-zinc-900 dark:text-zinc-100"
-              />
-              <span className={`shrink-0 pr-2 text-sm ${labelClass}`}>%</span>
-            </div>
+            <textarea
+              id={`match-analysis-${cardKey}`}
+              value={match.analysis ?? ''}
+              onChange={(e) => updateMatch(matchIndex, 'analysis', e.target.value)}
+              placeholder="この試合の分析を入力"
+              rows={1}
+              className="min-h-[8rem] w-full resize-y rounded-lg border border-zinc-300/90 bg-white/60 px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-900/45 dark:text-zinc-100 dark:placeholder:text-zinc-500 lg:min-h-0 lg:flex-1 lg:self-stretch"
+            />
           </div>
         </div>
       </div>
@@ -965,66 +972,9 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
         </div>
       </div>
 
-      {(!isTournamentMode || displayFlatMatches.length > 0) && (
-        <div>
-          <div className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            各試合分析
-          </div>
-          <div className="mb-4 space-y-2">
-            {displayFlatMatches.map((match, matchIndex) => {
-            const isCollapsed = collapsedAnalysisIndices.has(matchIndex)
-            const isAnalysisColored = match.result === '勝ち' || match.result === '負け'
-            const analysisBoxClass = match.result === '勝ち'
-              ? 'overflow-hidden rounded-lg border border-[#8a4526]/90 bg-[#a0522d]/82 backdrop-blur-sm dark:border-[#6d3820]/90 dark:bg-[#a0522d]/82'
-              : match.result === '負け'
-                ? 'overflow-hidden rounded-lg border border-[#3a6d99]/90 bg-[#4682b4]/82 backdrop-blur-sm dark:border-[#3a6d99]/90 dark:bg-[#4682b4]/82'
-                : 'overflow-hidden rounded-lg border border-zinc-200/90 bg-white/72 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-900/68'
-            const analysisHeaderClass = isAnalysisColored
-              ? 'flex w-full items-center justify-between px-3 py-2.5 text-left text-sm font-medium text-white hover:bg-black/10'
-              : 'flex w-full items-center justify-between px-3 py-2.5 text-left text-sm font-medium text-zinc-700 hover:bg-zinc-500/10 dark:text-zinc-300 dark:hover:bg-white/10'
-            const analysisChevronClass = isAnalysisColored ? 'text-white/90' : 'text-zinc-400 dark:text-zinc-500'
-            const analysisBorderClass = isAnalysisColored ? 'border-white/40' : 'border-zinc-200 dark:border-zinc-700'
-            return (
-              <div key={matchIndex} className="space-y-2">
-                <div className={analysisBoxClass}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCollapsedAnalysisIndices((prev) => {
-                        const next = new Set(prev)
-                        if (next.has(matchIndex)) next.delete(matchIndex)
-                        else next.add(matchIndex)
-                        return next
-                      })
-                    }}
-                    className={analysisHeaderClass}
-                  >
-                    <span>試合 {matchIndex + 1}</span>
-                    <span className={analysisChevronClass} aria-hidden>
-                      {isCollapsed ? '▶' : '▼'}
-                    </span>
-                  </button>
-                  {!isCollapsed && (
-                    <div className={`border-t ${analysisBorderClass} px-3 py-2`}>
-                      <textarea
-                        value={match.analysis ?? ''}
-                        onChange={(e) => updateMatch(matchIndex, 'analysis', e.target.value)}
-                        placeholder="この試合の分析を入力"
-                        rows={4}
-                        className="w-full rounded-lg border border-zinc-300/90 bg-white/60 px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-900/45 dark:text-zinc-100 dark:placeholder:text-zinc-500"
-                      />
-                    </div>
-                  )}
-                </div>
-              </div>
-            )
-            })}
-          </div>
-        </div>
-      )}
       <div>
         <label htmlFor="content" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-          振り返り
+          全体振り返り
         </label>
         <div className="flex flex-wrap gap-1 rounded-t-lg border border-b-0 border-zinc-300/90 bg-zinc-100/75 p-1 backdrop-blur-sm dark:border-zinc-600/90 dark:bg-zinc-800/45">
           <button
@@ -1057,7 +1007,7 @@ export default function ReviewForm({ initial, tournamentMode }: Props) {
           contentEditable
           suppressContentEditableWarning
           role="textbox"
-          aria-label="振り返り"
+          aria-label="全体振り返り"
           data-placeholder="反省・気づきを記入"
           onInput={syncContentFromDiv}
           onSelect={updateContentFormatState}
