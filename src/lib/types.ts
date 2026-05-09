@@ -28,3 +28,12 @@ export type IssueItem = {
   created_at: string
   updated_at: string
 }
+
+/** 戦術ページ・対戦チーム別メモ（opponent_team_tactics） */
+export type OpponentTeamTactic = {
+  id: string
+  team_name: string
+  content: string
+  created_at: string
+  updated_at: string
+}
